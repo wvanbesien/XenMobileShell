@@ -1,5 +1,5 @@
 ﻿#
-# Version: 1.1
+# Version: 1.1.1
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
 #
 
@@ -448,6 +448,9 @@ This value is case sensitive. To find out the correct name, create an enrollment
 .PARAMETER confirmationTemplate
 Specify the template to use when sending a notification to the user at completion of the enrollment. The default is blank. 
 This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
+
+.PARAMETER notifyNow
+Specify if you want to send notifications to the user. Value is either "true" or "false" (default.) 
 
 .EXAMPLE
 new-enrollment -user "ward@citrix.com" -OS "iOS" -ownership "BYOD" -mode "invitation_url"
