@@ -1,6 +1,6 @@
 ﻿#
-# Version: 1.0.1
-# Revision 2016.10.4
+# Version: 1.1
+# Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
 #
 
 
@@ -20,9 +20,18 @@ function submitToServer($request) {
     
     #this function is used to submit a request to the server. It will return a powershell object. 
        
-       $result = Invoke-RestMethod -Uri $request.url -Method $request.method -Body (ConvertTo-Json -Depth 6 $request.body) -Headers $request.header
+       try {
+
+       $result = Invoke-RestMethod -Uri $request.url -Method $request.method -Body (ConvertTo-Json -Depth 8 $request.body) -Headers $request.header -ErrorAction Stop
+       Write-Verbose ($result | ConvertTo-Json)
        return $result
-      
+      } 
+
+      catch {
+      Write-Host "Submission of the request to the server failed." -ForegroundColor Red
+      $ErrorMessage = $_.Exception.Message
+      Write-Host $ErrorMessage -ForegroundColor Red
+        }
     
 }
 
@@ -367,7 +376,7 @@ $token = get-authToken -user "admin" -password "citrix123" -server "mdm.citrix.c
         Write-Verbose "Submitting authentication request"
        
        $returnedToken = Invoke-RestMethod -Uri $URL -Method Post -Body (ConvertTo-Json $body) -Headers $header
-       Write-Verbose ("received token: " + $returnedToken)
+       Write-Verbose ("received token: " + $returnedToken) 
 
        return [string]$returnedToken.auth_token
               
@@ -394,6 +403,20 @@ This parameter is required. This is either the UPN or sAMAccountName depending o
 The OS parameter specifies the type of operating system. Options are iOS, SHTP.
 For android, use SHTP. This parameter is required. 
 
+.PARAMETER phoneNumber
+This is the phone number notifications will be sent to. The parameter is optional but without it no SMS notifications are sent. 
+
+.PARAMETER carrier
+Specify the carrier to use. This is optional and only required in case multiple cariers and SMS gateway have been configured. 
+
+.PARAMETER deviceBindingType
+You can specify either SERIALNUMBER, IMEI or UDID as the device binding paramater. This defaults to SERIALNUMBER. 
+This parameter is only useful if you also specify the deviceBindingData. 
+
+.PARAMETER deviceBindingData
+By specifying devicebindingdata you can link an enrollment invitation to a specific device. Use the deviceBindingType to specify what you will use, 
+and specify the value here. For example, to bind to a serial number set the deviceBindingType to SERIALNUMBER and provide the serialnumber as the value of deviceBindingData. 
+
 .PARAMETER ownership
 This parameter specifies the ownership of the device. Values are either CORPORATE or BYOD or NO_BINDING.
 Default value is NO_BINDING. 
@@ -410,6 +433,22 @@ invitation_pwd: generates an inivation and will request the user's password duri
 username_pin: generates a one time PIN and requires users to login with that pin and the username
 two_factor: generates an invitation url, a one time PIN and requires the user to login with, password and PIN. 
 
+.PARAMETER agentTemplate
+Specify the template to use when sending a notification to the user to download Secure Hub. The default is blank. 
+This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
+
+.PARAMETER invitationTemplate
+Specify the template to use when sending a notification to the user to with the enrollment URL. The default is blank. 
+This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
+
+.PARAMETER pinTemplate
+Specify the template to use when sending a notification for the one time PIN to the user. The default is blank. 
+This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
+
+.PARAMETER confirmationTemplate
+Specify the template to use when sending a notification to the user at completion of the enrollment. The default is blank. 
+This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
+
 .EXAMPLE
 new-enrollment -user "ward@citrix.com" -OS "iOS" -ownership "BYOD" -mode "invitation_url"
 
@@ -424,9 +463,18 @@ This will read a CSV file and create an enrolment for each of the entries.
 param(
     [parameter(ValueFromPipeLineByPropertyName,ValueFromPipeLine,mandatory=$true)][string]$user,
     [parameter(ValueFromPipeLineByPropertyName,ValueFromPipeLine,mandatory=$true)][ValidateSet("iOS","SHTP")][string]$OS,
+    [parameter(valueFromPipelineByPropertyName)]$phoneNumber = $null,
+    [parameter(valueFromPipelineByPropertyName)]$carrier = $null,
+    [parameter(valueFromPipelineByPropertyName)][ValidateSet("SERIALNUMBER","UDID","IMEI")]$deviceBindingType = "SERIALNUMBER",
+    [parameter(valueFromPipelineByPropertyName)]$deviceBindingData = $null,
     [parameter(ValueFromPipeLineByPropertyName,ValueFromPipeLine)][ValidateSet("CORPORATE","BYOD","NO_BINDING")][string]$ownership = "NO_BINDING",
     [parameter(valueFromPipeLineByPropertyName)][ValidateSet("classic","high_security","invitation","invitation_pin","invitation_pwd","username_pin",
-    "two_factor")]$mode = "classic"
+    "two_factor")]$mode = "classic",
+    [parameter(ValueFromPipeLineByPropertyName)]$agentTemplate = $null,
+    [parameter(ValueFromPipeLineByPropertyName)]$invitationTemplate = $null,
+    [parameter(ValueFromPipeLineByPropertyName)]$pinTemplate = $null,
+    [parameter(ValueFromPipeLineByPropertyName)]$confirmationTemplate = $null,
+    [parameter(ValueFromPipeLineByPropertyName)][ValidateSet("true","false")]$nofiyNow = "false"
     
 )
 
@@ -446,24 +494,58 @@ Process {
                         name = $mode
                         }
                 userName = $user
-                notificationTemplateCategories = @()          
+                notificationTemplateCategories = @(
+                    @{ 
+                        notificationTemplate = @{ name = $agentTemplate }
+                        category = "ENROLLMENT_AGENT"
+                     } 
+                    @{ 
+                        notificationTemplate = @{  name = $invitationTemplate }
+                        category = "ENROLLMENT_URL" 
+                     } 
+                    @{ 
+                        notificationTemplate = @{ name = $pinTemplate }
+                        category = "ENROLLMENT_PIN"
+                     } 
+                    @{ 
+                        notificationTemplate = @{ name = $confirmationTemplate }
+                        category = "ENROLLMENT_CONFIRMATION" 
+                     }
+                
+                
+                )          
             
             
-                phoneNumber = $null
-                carrier = $null
-                deviceBindingType = "SERIALNUMBER"
-                deviceBindingData = $null
-                notifyNow = "false"
+                phoneNumber = $phoneNumber
+                carrier = $carrier
+                deviceBindingType = $deviceBindingType
+                deviceBindingData = $deviceBindingData
+                notifyNow = $nofiyNow
             }
 
             Write-Verbose "Created enrollment request object for submission to server. "
 
-            $enrollmentResult = postObject -url "/enrollment" -target $body
-            $searchresult = search -url "/enrollment/filter" -criteria $enrollmentResult.token
-            $enrollment = $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
-            $enrollment | Add-Member -NotePropertyName url -NotePropertyValue $enrollmentResult.url
-            $enrollment | Add-Member -NotePropertyName message -NotePropertyValue $enrollmentResult.message
-            return $enrollment 
+          
+            $enrollmentResult = postObject -url "/enrollment" -target $body -ErrorAction Stop
+            Write-Verbose "Enrollment invitation submitted."
+          
+            # the next portion of the function will download additional information about the enrollment request
+            # this is pointless if the invitation was not correctly created due to an error with the request. 
+            # Hence, we only run this, if there is an actual invitation in the enrollmentResult value. 
+
+            if ($enrollmentResult -ne $null) {
+                Write-Verbose "An enrollment invication was created. Searching for additional details. "
+                $searchresult = search -url "/enrollment/filter" -criteria $enrollmentResult.token
+                $enrollment = $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
+                $enrollment | Add-Member -NotePropertyName url -NotePropertyValue $enrollmentResult.url
+                $enrollment | Add-Member -NotePropertyName message -NotePropertyValue $enrollmentResult.message
+                $enrollment | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
+                return $enrollment 
+            } else {
+            Write-Host "The server was unable to create an enrollment invitation. Common causes are connectivity issues, as well as errors in the information supplied such as username, template names etc. Ensure all values in the request are correct." -ForegroundColor Yellow
+            }
+
+            
        }
 }
 
@@ -528,8 +610,9 @@ Begin {
     Process {
 
         $searchresult = search  -url "/enrollment/filter" -criteria $user -filterIds $filter -ResultSetSize $ResultSetSize
-        return $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
-
+        $resultset =  $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
+        $resultset | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
+        return $resultset
     }
 
 }
@@ -1682,6 +1765,7 @@ remove-xmclientproperty -key "TEST_PROPERTY"
 
 
 }
+
 
 Export-ModuleMember -Function get-XMClientProperty
 Export-ModuleMember -Function get-XMDevice
