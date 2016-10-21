@@ -1,7 +1,7 @@
 ﻿#
-# Version: 1.1.2
+# Version: 1.1.3
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
-# Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. 
+# Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name. 
 
 
 
@@ -477,7 +477,7 @@ param(
     [parameter(ValueFromPipeLineByPropertyName)]$invitationTemplate = $null,
     [parameter(ValueFromPipeLineByPropertyName)]$pinTemplate = $null,
     [parameter(ValueFromPipeLineByPropertyName)]$confirmationTemplate = $null,
-    [parameter(ValueFromPipeLineByPropertyName)][ValidateSet("true","false")]$nofiyNow = "false",
+    [parameter(ValueFromPipeLineByPropertyName)][ValidateSet("true","false")]$notifyNow = "false",
     [switch]$force
     
 )
@@ -528,7 +528,7 @@ Process {
                     carrier = $carrier
                     deviceBindingType = $deviceBindingType
                     deviceBindingData = $deviceBindingData
-                    notifyNow = $nofiyNow
+                    notifyNow = $notifyNow
                 }
 
                 Write-Verbose "Created enrollment request object for submission to server. "
