@@ -1,7 +1,7 @@
 ﻿#
-# Version: 1.1.1
+# Version: 1.1.2
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
-#
+# Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. 
 
 
 
@@ -456,7 +456,7 @@ Specify if you want to send notifications to the user. Value is either "true" or
 new-enrollment -user "ward@citrix.com" -OS "iOS" -ownership "BYOD" -mode "invitation_url"
 
 .EXAMPLE
-import-csv -path users.csv | %{ new-enrollment -user $_.upn -OS $_.os -ownership $_.ownership }
+import-csv -path users.csv | new-enrollment -OS iOS -ownership BYOD
 
 This will read a CSV file and create an enrolment for each of the entries.
 
@@ -477,79 +477,86 @@ param(
     [parameter(ValueFromPipeLineByPropertyName)]$invitationTemplate = $null,
     [parameter(ValueFromPipeLineByPropertyName)]$pinTemplate = $null,
     [parameter(ValueFromPipeLineByPropertyName)]$confirmationTemplate = $null,
-    [parameter(ValueFromPipeLineByPropertyName)][ValidateSet("true","false")]$nofiyNow = "false"
+    [parameter(ValueFromPipeLineByPropertyName)][ValidateSet("true","false")]$nofiyNow = "false",
+    [switch]$force
     
 )
 
 Begin {
     #check session state
     checkSession
+
+    $RejectAll = $false
+    $ConfirmAll = $false
+
 }
 
 Process {
 
-        if ($PSCmdlet.ShouldProcess($user)) {
+       if ($force -or $PSCmdlet.ShouldContinue("Do you want to continue?","Creating enrollment for '$user'",[ref]$ConfirmAll,[ref]$RejectAll)  ) {
 
-            $body = @{
-                platform = $OS
-                deviceOwnership = $ownership
-                mode = @{
-                        name = $mode
-                        }
-                userName = $user
-                notificationTemplateCategories = @(
-                    @{ 
-                        notificationTemplate = @{ name = $agentTemplate }
-                        category = "ENROLLMENT_AGENT"
-                     } 
-                    @{ 
-                        notificationTemplate = @{  name = $invitationTemplate }
-                        category = "ENROLLMENT_URL" 
-                     } 
-                    @{ 
-                        notificationTemplate = @{ name = $pinTemplate }
-                        category = "ENROLLMENT_PIN"
-                     } 
-                    @{ 
-                        notificationTemplate = @{ name = $confirmationTemplate }
-                        category = "ENROLLMENT_CONFIRMATION" 
-                     }
+                $body = @{
+                    platform = $OS
+                    deviceOwnership = $ownership
+                    mode = @{
+                            name = $mode
+                            }
+                    userName = $user
+                    notificationTemplateCategories = @(
+                        @{ 
+                            notificationTemplate = @{ name = $agentTemplate }
+                            category = "ENROLLMENT_AGENT"
+                         } 
+                        @{ 
+                            notificationTemplate = @{  name = $invitationTemplate }
+                            category = "ENROLLMENT_URL" 
+                         } 
+                        @{ 
+                            notificationTemplate = @{ name = $pinTemplate }
+                            category = "ENROLLMENT_PIN"
+                         } 
+                        @{ 
+                            notificationTemplate = @{ name = $confirmationTemplate }
+                            category = "ENROLLMENT_CONFIRMATION" 
+                         }
                 
                 
-                )          
+                    )          
             
             
-                phoneNumber = $phoneNumber
-                carrier = $carrier
-                deviceBindingType = $deviceBindingType
-                deviceBindingData = $deviceBindingData
-                notifyNow = $nofiyNow
-            }
+                    phoneNumber = $phoneNumber
+                    carrier = $carrier
+                    deviceBindingType = $deviceBindingType
+                    deviceBindingData = $deviceBindingData
+                    notifyNow = $nofiyNow
+                }
 
-            Write-Verbose "Created enrollment request object for submission to server. "
+                Write-Verbose "Created enrollment request object for submission to server. "
 
           
-            $enrollmentResult = postObject -url "/enrollment" -target $body -ErrorAction Stop
-            Write-Verbose "Enrollment invitation submitted."
+                $enrollmentResult = postObject -url "/enrollment" -target $body -ErrorAction Stop
+                Write-Verbose "Enrollment invitation submitted."
           
-            # the next portion of the function will download additional information about the enrollment request
-            # this is pointless if the invitation was not correctly created due to an error with the request. 
-            # Hence, we only run this, if there is an actual invitation in the enrollmentResult value. 
+                # the next portion of the function will download additional information about the enrollment request
+                # this is pointless if the invitation was not correctly created due to an error with the request. 
+                # Hence, we only run this, if there is an actual invitation in the enrollmentResult value. 
 
-            if ($enrollmentResult -ne $null) {
-                Write-Verbose "An enrollment invication was created. Searching for additional details. "
-                $searchresult = search -url "/enrollment/filter" -criteria $enrollmentResult.token
-                $enrollment = $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
-                $enrollment | Add-Member -NotePropertyName url -NotePropertyValue $enrollmentResult.url
-                $enrollment | Add-Member -NotePropertyName message -NotePropertyValue $enrollmentResult.message
-                $enrollment | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
-                return $enrollment 
-            } else {
-            Write-Host "The server was unable to create an enrollment invitation. Common causes are connectivity issues, as well as errors in the information supplied such as username, template names etc. Ensure all values in the request are correct." -ForegroundColor Yellow
+                if ($enrollmentResult -ne $null) {
+                    Write-Verbose "An enrollment invication was created. Searching for additional details. "
+                    $searchresult = search -url "/enrollment/filter" -criteria $enrollmentResult.token
+                    $enrollment = $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
+                    $enrollment | Add-Member -NotePropertyName url -NotePropertyValue $enrollmentResult.url
+                    $enrollment | Add-Member -NotePropertyName message -NotePropertyValue $enrollmentResult.message
+                    $enrollment | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
+                    return $enrollment 
+                } 
+                else {
+                Write-Host "The server was unable to create an enrollment invitation for '$user'. Common causes are connectivity issues, as well as errors in the information supplied such as username, template names etc. Ensure all values in the request are correct." -ForegroundColor Yellow
+                }
+
             }
-
             
-       }
+      
 }
 
 
