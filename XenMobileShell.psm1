@@ -1,7 +1,9 @@
 ﻿#
-# Version: 1.1.3
+# Version: 1.2.0
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
-# Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name. 
+# Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name.
+# Revision 1.1.4 2016.11.24: corrected example in new-xmenrollment
+# Revision 1.2.0 2016.11.25: added the use of a PScredential object with the new-xmsession command.   
 
 
 
@@ -226,12 +228,18 @@ Starts a XMS session. Run this before running any other commands.
 .DESCRIPTION
 This command will login to the server and get an authentication token. This command will set several session variables that are used by all the other commands.
 This command must be run before any of the other commands. 
+This command can use either a username or password pair entered as variables, or you can use a PScredential object. To create a PScredential object,
+run the get-credential command and store the output in a variable. 
+If both a user, password and credential are provided, the credential will take precedence. 
 
 .PARAMETER -user
 Specify the user with required permissions to access the XenMobile API. 
 
 .PARAMETER -password
 Specify the password for the API user. 
+
+.PARAMETER -credential
+Specify a PScredential object. This replaces the user and password parameters and can be used when stronger security is desired. 
 
 .PARAMETER -server
 Specify the server you will connect to. This should be a FQDN, not IP address. PowerShell is picky with regards to connectivity to encrypted paths. 
@@ -246,6 +254,13 @@ new-XMSession -user "admin" -password "password" -server "mdm.citrix.com"
 .EXAMPLE
 new-XMSession -user "admin" -password "password" -server "mdm.citrix.com" -port "4443"
 
+.EXAMPLE
+$credential = get-credential
+new-xmsession -credential $credential -server mdm.citrix.com
+
+.EXAMPLE
+new-xmsession -credential (get-credential) -server mdm.citrix.com
+
 #>
 
 
@@ -254,6 +269,7 @@ new-XMSession -user "admin" -password "password" -server "mdm.citrix.com" -port 
  param(
     [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$user,
     [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$password,
+    [parameter(valueFromPipelineByPropertyName,ValueFromPipeLine)]$credential=$null,
     [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$server,
     [parameter(ValueFromPipeLIneByPropertyName)][string]$port = "4443"
     )
@@ -271,14 +287,27 @@ Process {
 
     Write-Verbose "creating an authentication token, and setting the XMSAuthToken and XMSServer variables"
 
+     #if a credential object is used, convert the secure password to a clear text string to submit to the server. 
+
+    if ($credential -ne $null) {
+        $user = $credential.username
+        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($credential.password)
+        $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+        }
+
     Try {
 
-    Set-Variable -name "XMSAuthToken" -Value (get-authToken -user $user -password $password -server $server -port $XMSServerPort) -Scope global -ErrorAction Stop } 
+        Set-Variable -name "XMSAuthToken" -Value (get-authToken -user $user -password $password -server $server -port $XMSServerPort) -Scope global -ErrorAction Stop } 
+
+   
 
     catch
         { Write-host "Authentication failed." -ForegroundColor Yellow
         break
          }
+
+    #clear the password variable, to reduce chance of compromise
+    $password = $null
 
     Set-Variable -name "XMSServer" -Value $server -scope global
     
@@ -453,7 +482,7 @@ This value is case sensitive. To find out the correct name, create an enrollment
 Specify if you want to send notifications to the user. Value is either "true" or "false" (default.) 
 
 .EXAMPLE
-new-enrollment -user "ward@citrix.com" -OS "iOS" -ownership "BYOD" -mode "invitation_url"
+new-xmenrollment -user "ward@citrix.com" -OS "iOS" -ownership "BYOD" -mode "invitation_url"
 
 .EXAMPLE
 import-csv -path users.csv | new-enrollment -OS iOS -ownership BYOD
