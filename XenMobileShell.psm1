@@ -65,7 +65,6 @@ function Search-XMObject {
             'auth_token'   = $XMSAuthToken;
             'Content-Type' = 'application/json'
         }
-
         $Request.body      = @{
             start          = '0';
             limit          = [int]$ResultSetSize;
@@ -92,7 +91,6 @@ function Remove-XMObject {
         [Parameter()]
         [string[]]$Target
     )
-
     process { 
         $Request.method    = 'DELETE'
         $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1$($Url)"
@@ -132,7 +130,7 @@ function postObject {
 }
 
 function putObject {
-#function used by PUT Type requests. 
+    #function used by PUT Type requests. 
     param(
         [Parameter(mandatory)]
         $Url,
@@ -192,6 +190,29 @@ function checkSession {
     }
 }
 
+function Join-Url {
+    param(
+        [Parameter(mandatory)]
+        [string]$Hostname,
+
+        [Parameter(mandatory)]
+        [string[]] $Parts,
+
+        [Parameter()]
+        [ValidateSet('http', 
+            'https')]
+        [string]$Scheme = 'https',
+
+        [Parameter()]
+        [int]$Port = 4443,
+
+        [Parameter()]
+        [string] $Seperator = '/'
+    )
+    $BaseUrl = "$($Scheme)://$($Hostname):$($Port)"
+    return (,$BaseUrl+$Parts | Where-Object { $PSItem } | ForEach-Object { $PSItem.Trim('/') } | Where-Object { $PSItem } ) -join '/'
+}
+
 #main functions. 
 
 function New-XMSession {
@@ -236,7 +257,6 @@ New-XMSession -Credential $Credential -Server mdm.citrix.com
 New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
 
 #>
-
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -259,18 +279,28 @@ New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
         [string]$Port = '4443'
     )
     process {
+        #Set-Variable -Name 'XMSServer' -Value $Server -Scope global
+        $XMSServerScheme = 'https'
+        $XMSServerHostname = $Server
+
         Write-Verbose -Message 'Setting the server port.'
-        Set-Variable -Name 'XMSServerPort' -Value '4443' -Scope Global
+        #Set-Variable -Name 'XMSServerPort' -Value '4443' -Scope global
+        $XMSServerPort = 4443
         if ($Port.Length -gt 0 -and $Port -ne '4443') {
-            Set-Variable -Name 'XMSServerPort' -Value $Port -Scope Global
+            #Set-Variable -Name 'XMSServerPort' -Value $Port -Scope global
+            $XMSServerPort = $Port
         }
+        #Set-Variable -Name 'XMSServerApiPath' -Value '/xenmobile/api/v1' -Scope global
+        $XMSServerApiPath = '/xenmobile/api/v1'
+        #$XMSServerBaseUrl = "$($XMSServerScheme)://$($XMSServerHostname):$($XMSServerPort)"
+        $XMSServerApiUrl  = Join-Url -Scheme $XMSServerScheme -Hostname $XMSServerHostname -Port $XMSServerPort -Parts $XMSServerApiPath -Seperator '/'
 
         Write-Verbose -Message 'Creating an authentication token, and setting the XMSAuthToken and XMSServer variables'
         #if a credential object is used, convert the secure password to a clear text string to submit to the server. 
         if ($null -ne $Credential) {
             $User = $Credential.username
             $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.password)
-            $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+            $Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
         }
         try {
             Set-Variable -Name 'XMSAuthToken' -Value (Get-XMAuthToken -User $User -Password $Password -Server $Server -Port $XMSServerPort) -Scope global -ErrorAction Stop
@@ -282,12 +312,9 @@ New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
         #clear the password variable, to reduce chance of compromise
         #$Password = $null
         Clear-Variable -Name 'Password'
-
-        Set-Variable -Name 'XMSServer' -Value $Server -Scope global
         #create variables to establish the session timeout. 
         Set-Variable -Name 'XMSessionStart' -Value (Get-Date) -Scope global
         Write-Verbose -Message "Setting session start to: $($XMSessionStart)"
-
         #check if the timeout type is set to inactivity or static and set the global value accordingly. 
         #if a static timeout is used, the session expiry can be set based on the static timeout. 
         Write-Verbose -Message 'Checking the type of timeout the server uses:'
@@ -325,6 +352,12 @@ Most cmdlets in this module require a token in order to authenticate against the
 This cmdlet will authenticate against the server and provide you with a token. It requires a username, password and server address. 
 The cmdlet assumes you are connecting to port 4443. All parameters can be piped into this command.  
 
+.PARAMETER Api
+Specify the API address. Example: https://mdm.citrix.com:4443/xenmobile/api/v1
+
+.PARAMETER -Credential
+Specify a PScredential object. This replaces the user and password parameters and can be used when stronger security is desired. 
+
 .PARAMETER User
 Specify the username. This username must have API access. 
 
@@ -339,8 +372,20 @@ Specify the port to connect to. This defaults to 4443. Only specify this paramet
 
 .EXAMPLE
 $Token = Get-XMAuthToken -User "admin" -Password "citrix123" -Server "mdm.citrix.com
+
+.EXAMPLE
+$Token = Get-XMAuthToken -Api "https://mdm.citrix.com:4443/xenmobile/api/v1" -Credential $StoredPSCredential
+
 #> 
     param(
+        [Parameter(ValueFromPipelineByPropertyName, 
+            ValueFromPipeLine)]
+        [string]$Api,
+
+        [Parameter(valueFromPipelineByPropertyName, 
+            ValueFromPipeLine)]
+        $Credential = $null,
+
         [Parameter(ValueFromPipelineByPropertyName, 
             ValueFromPipeLine)]
         [string]$User,
@@ -356,8 +401,18 @@ $Token = Get-XMAuthToken -User "admin" -Password "citrix123" -Server "mdm.citrix
         [Parameter(ValueFromPipeLIneByPropertyName)]
         [string]$Port = '4443'
     )
-    $URL               = "https://$($Server):$($Port)/xenmobile/api/v1/authentication/login"
-    $Header            = @{
+    $Entity = '/authentication/login'
+    #$URL    = "https://$($Server):$($Port)/xenmobile/api/v1/authentication/login"
+    $URL    = "$($Api)$($Entity)"
+
+    #if a credential object is used, convert the secure password to a clear text string to submit to the server. 
+    if ($null -ne $Credential) {
+        $User = $Credential.username
+        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.password)
+        $Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+    }
+
+    $Header = @{
         'Content-Type' = 'application/json'
     }
     $Body = @{
@@ -376,7 +431,6 @@ function New-XMEnrollment {
 <#
 .SYNOPSIS
 This command will create an enrollment for the specified user.
-
 
 .DESCRIPTION
 Use this command to create enrollments. You can pipe parameters into this command from another command. 
@@ -450,16 +504,15 @@ This will read a CSV file and create an enrolment for each of the entries.
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
-
     param(
         [Parameter(ValueFromPipeLineByPropertyName, 
             ValueFromPipeLine, 
-            mandatory = $true)]
+            Mandatory = $true)]
         [string]$User,
 
         [Parameter(ValueFromPipeLineByPropertyName, 
             ValueFromPipeLine, 
-            mandatory = $true)]
+            Mandatory = $true)]
         [ValidateSet('iOS', 
             'SHTP')]
         [string]$OS,
@@ -515,14 +568,12 @@ This will read a CSV file and create an enrolment for each of the entries.
 
         [switch]$Force
     )
-
     begin {
         #check session state
         checkSession
         $RejectAll  = $false
         $ConfirmAll = $false
     }
-
     process {
         if ($Force -or $PSCmdlet.ShouldContinue('Do you want to continue?', "Creating enrollment for '$($User)'", [ref]$ConfirmAll, [ref]$RejectAll)) {
             $Body = @{
@@ -732,6 +783,7 @@ Remove-XMDevice -Id "21"
 
 .EXAMPLE
 Get-XMDevice -User "ward@citrix.com | ForEach-Object { Remove-XMDevice -Id $PSItem.id }
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -752,7 +804,7 @@ Get-XMDevice -User "ward@citrix.com | ForEach-Object { Remove-XMDevice -Id $PSIt
 }
 
 function Update-XMDevice {
-   <#
+<#
 .SYNOPSIS
 Sends a deploy command to the selected device. A deploy will trigger a device to check for updated policies. 
 
@@ -970,6 +1022,7 @@ Specify the ID of the device. Use get-XMDevice to find the id of each device.
 
 .EXAMPLE
 Get-XMDeviceManagedApps -Id "8" 
+
 #>
     [CmdletBinding()]
     param(
@@ -1000,6 +1053,7 @@ Specify the ID of the device. Use get-XMDevice to find the id of each device.
 
 .EXAMPLE
 Get-XMDeviceSoftwareInventory -Id "8" 
+
 #>
     [CmdletBinding()]
     param(
@@ -1031,6 +1085,7 @@ Specify the ID of the device. Use get-XMDevice to find the id of each device.
 
 .EXAMPLE
 Get-XMDeviceInfo -Id "8"
+
 #>  
     [CmdletBinding()]
     param(
@@ -1061,6 +1116,7 @@ Specify the ID of the device. Use Get-XMDevice to find the id of each device.
 
 .EXAMPLE
 Get-XMDevicePolicy -Id "8"
+
 #>  
     [CmdletBinding()]
     param(
@@ -1094,6 +1150,7 @@ Get-XMDeviceProperty -Id "8"
 
 .EXAMPLE
 Get-XMDevice -Name "Ward@citrix.com" | Get-XMDeviceProperties
+
 #>
     [CmdletBinding()]
     param(
@@ -1133,6 +1190,7 @@ Specify the value of the property.
 
 .EXAMPLE
 Set-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED" -Value "1"
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact='High')]
@@ -1181,6 +1239,7 @@ Specify the name of the property. Such as "CORPORATE_OWNED"
 
 .EXAMPLE
 Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -1294,6 +1353,7 @@ Specify a new description. This parameter is optional. If not specified the exis
 
 .EXAMPLE
 Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -1364,6 +1424,7 @@ Specify a the description.
 
 .EXAMPLE
 New-XMServerProperty -Name "xms.something.something" -Value "indeed" -DisplayName "something" -Description "a something property."
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -1420,6 +1481,7 @@ Specify the name of the propery to remove. This parameter is mandatory.
 
 .EXAMPLE
 Remove-XMServerProperty -Name "xms.something.something"
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -1458,6 +1520,7 @@ Get-XMClientProperty  #returns all properties
 
 .EXAMPLE
 Get-XMClientProperty -Key "ENABLE_PASSWORD_CACHING"
+
 #>
     [CmdletBinding()]
     param(
@@ -1496,6 +1559,7 @@ Specify the value of the property. The value set when the property is created is
 
 .EXAMPLE
 New-XMClientProperty -Displayname "Enable touch ID" -Description "Enables touch ID" -Key "ENABLE_TOUCH_ID_AUTH" -Value "true"
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -1556,6 +1620,7 @@ Specify the value of the property.
 
 .EXAMPLE
 Set-XMClientProperty -Key "ENABLE_TOUCH_ID_AUTH" -Value "false"
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -1612,6 +1677,7 @@ Specify the key of the propery to remove. This parameter is mandatory.
 
 .EXAMPLE
 Remove-XMClientProperty -Key "TEST_PROPERTY"
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
@@ -1631,7 +1697,6 @@ Remove-XMClientProperty -Key "TEST_PROPERTY"
         }
     }
 }
-
 
 Export-ModuleMember -Function Get-XMClientProperty
 Export-ModuleMember -Function Get-XMDevice
