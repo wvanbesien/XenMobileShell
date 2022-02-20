@@ -1,226 +1,200 @@
 ﻿#
-# Version: 1.2.0
+# Version: 1.2.1
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
 # Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name.
 # Revision 1.1.4 2016.11.24: corrected example in new-xmenrollment
 # Revision 1.2.0 2016.11.25: added the use of a PScredential object with the new-xmsession command.   
-
+# Revision 1.2.1 2022-02-20: Code beautification and consistency.
 
 
 #the request object is used by many of the functions. Do not delete.  
-$request = [pscustomobject]@{
+$Request = [pscustomobject]@{
     method = $null
-    url = $null
+    url    = $null
     header = $null
-    body = $null
+    body   = $null
 }
 
 
-#supporting functions. These functions are called by other functions in the module. 
+#supporting functions. These functions are called by other functions in the module.
 
-function submitToServer($request) {
-    
-    #this function is used to submit a request to the server. It will return a powershell object. 
-       
-       try {
+#$XMSServerProtocol = 'https://'
+#$XMSServerHost = 'mdm.citrix.com'
+#$XMSServerPort = 4443
+#$XMSServerApiPath = '/xenmobile/api/v1'
 
-       $result = Invoke-RestMethod -Uri $request.url -Method $request.method -Body (ConvertTo-Json -Depth 8 $request.body) -Headers $request.header -ErrorAction Stop
-       Write-Verbose ($result | ConvertTo-Json)
-       return $result
-      } 
-
-      catch {
-      Write-Host "Submission of the request to the server failed." -ForegroundColor Red
-      $ErrorMessage = $_.Exception.Message
-      Write-Host $ErrorMessage -ForegroundColor Red
-        }
-    
-}
-
-function search {
-
-#this function submits a search request to the server and returns the results.
-#a token is required, server, as well as the url which specifies the API this goes to. 
-#the url is the portion after https://<server>:4443/xenmobile/api/v1 beginning with slash. 
-
+#function submitToServer {
+function Invoke-XMRequest {
     param(
-         [parameter()]$criteria = $null,
-         [parameter(mandatory)]$url,
-         [parameter()]$filterIds = "[]",
-         [parameter()]$ResultSetSize = 999
-         
-        )
-
-    
-
-   Process { 
- 
-    $request.method = "POST"
-    $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1" + $url
-    $request.header = @{ 'auth_token' = $XMSAuthtoken ;
-            'Content-Type' = 'application/json' }
-
-    $request.body = @{
-        start = "0";
-        limit = [int]$ResultSetSize;
-        sortOrder =  "ASC";
-        sortColumn = "ID";
-        search = $criteria;
-        enableCount = "true";
-        filterIds = $filterIds
-        }
-    
-    
+        [Parameter(mandatory)]
+        $Request
+    )
+    try {
+        $Result = Invoke-RestMethod -Uri $Request.url -Method $Request.method -Body (ConvertTo-Json -Depth 8 $Request.body) -Headers $Request.header -ErrorAction Stop
+        Write-Verbose -Message ($Result | ConvertTo-Json)
+        return $Result
     }
-     end {
-      return submitToServer $request
- }  
-    
-
+    catch {
+        Write-Host 'Submission of the request to the server failed.' -ForegroundColor Red
+        $ErrorMessage = $_.Exception.Message
+        Write-Host $ErrorMessage -ForegroundColor Red
+    }
 }
 
-function deleteObject {
-<#
-This function is used by DELETE type requests. 
-#>
+function Search-XMObject {
+    #this function submits a search request to the server and returns the results.
+    #a token is required, server, as well as the url which specifies the API this goes to. 
+    #the url is the portion after https://<server>:4443/xenmobile/api/v1 beginning with slash. 
+    param(
+        [Parameter()]
+        $Criteria = $null,
 
-param(
-         
-         [parameter(mandatory)]$url,
-         [parameter()][string[]]$target
-         
-        )
+        [Parameter(mandatory)]
+        $Url,
 
-Process { 
-    
-    $request.method = "DELETE"
-    $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1" + $url
-    $request.header = @{ 'auth_token' = $XMSAuthToken ;
-            'Content-Type' = 'application/json' }
+        [Parameter()]
+        $FilterIds = '[]',
 
-    $request.body = $target
-    
-    
+        [Parameter()]
+        $ResultSetSize = 999
+    )
+    process { 
+        $Request.method    = 'POST'
+        $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1$($Url)"
+        $Request.header    = @{
+            'auth_token'   = $XMSAuthToken;
+            'Content-Type' = 'application/json'
+        }
+
+        $Request.body      = @{
+            start          = '0';
+            limit          = [int]$ResultSetSize;
+            sortOrder      = 'ASC';
+            sortColumn     = 'ID';
+            search         = $Criteria;
+            enableCount    = 'true';
+            filterIds      = $FilterIds
+        }
     }
-     end {
-      return submitToServer $request
- }  
+    end {
+        return Invoke-XMRequest -Request $Request
+    }
+}
 
- }
+function Remove-XMObject {
+    <#
+    This function is used by DELETE type requests. 
+    #>
+    param(
+        [Parameter(mandatory)]
+        $Url,
+
+        [Parameter()]
+        [string[]]$Target
+    )
+
+    process { 
+        $Request.method    = 'DELETE'
+        $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1$($Url)"
+        $Request.header    = @{
+            'auth_token'   = $XMSAuthToken;
+            'Content-Type' = 'application/json'
+        }
+        $Request.body      = $Target
+    }
+    end {
+        return Invoke-XMRequest -Request $Request
+    }
+}
 
 function postObject {
-#function used by POST Type requests. 
-
+    #function used by POST Type requests. 
     param(
-        [parameter(mandatory)]$url,
-        [parameter(mandatory)]$target
-        )
+        [Parameter(mandatory)]
+        $Url,
 
-Process { 
-    
-    Write-Verbose "submitting POST request"
-
-    $request.method = "POST"
-    $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1" + $url
-    $request.header = @{ 'auth_token' = $XMSAuthToken ;
-            'Content-Type' = 'application/json' }
-
-    $request.body = $target
-    
-    
+        [Parameter(mandatory)]
+        $Target
+    )
+    process { 
+        Write-Verbose -Message 'Submitting POST request.'
+        $Request.method    = 'POST'
+        $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1$($Url)"
+        $Request.header    = @{
+            'auth_token'   = $XMSAuthToken;
+            'Content-Type' = 'application/json'
+        }
+        $Request.body      = $Target
     }
-     end {
-      return submitToServer $request
-   
+    end {
+        return Invoke-XMRequest -Request $Request
     }
-
 }
 
 function putObject {
 #function used by PUT Type requests. 
-
     param(
-        [parameter(mandatory)]$url,
-        [parameter(mandatory)]$target
-        )
+        [Parameter(mandatory)]
+        $Url,
 
-    Process { 
-    
-    Write-Verbose "Submitting PUT request"
-
-    $request.method = "PUT"
-    $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1" + $url
-    $request.header = @{ 'auth_token' = $XMSAuthToken ;
-            'Content-Type' = 'application/json' }
-
-    $request.body = $target
-    
-    
+        [Parameter(mandatory)]
+        $Target
+    )
+    process { 
+        Write-Verbose -Message 'Submitting PUT request.'
+        $Request.method    = 'PUT'
+        $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1$($Url)"
+        $Request.header    = @{
+            'auth_token'   = $XMSAuthToken;
+            'Content-Type' = 'application/json'
+        }
+        $Request.body      = $Target
     }
-     end {
-      return submitToServer $request
+    end {
+        return Invoke-XMRequest -Request $Request
     }
-
 }
 
 function getObject {
-#function used to submit GET type requests to the server. 
-
-param(
-        [parameter(mandatory)]$url
-      
-        )
-
-Process { 
-    
-    $request.method = "GET"
-    $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1" + $url
-    $request.header = @{ 'auth_token' = $XMSAuthToken ;
-            'Content-Type' = 'application/json' }
-    $request.body = $null
-
-      
-    
+    #function used to submit GET type requests to the server. 
+    param(
+        [Parameter(mandatory)]
+        $Url
+    )
+    process {
+        $Request.method    = 'GET'
+        $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1$($Url)"
+        $Request.header    = @{
+            'auth_token'   = $XMSAuthToken;
+            'Content-Type' = 'application/json'
+        }
+        $Request.body      = $null
     }
-     end {
-      return submitToServer $request
-
-
-}
-
+    end {
+        return Invoke-XMRequest -Request $Request
+    }
 }
 
 function checkSession {
-#this functions checks the state of the session timeout. And will update in case the timeout type is inactivity. 
-
-  if ($XMSessionExpiry -gt (get-date)) {
-
-  Write-Verbose "Session is still active."
-
-  #if we are using an inactivity timer (rather than static timeout), update the expiry time. 
-
-    if ($XMSessionUseInactivity -eq $true) {
-
-        $timeToExpiry = (($XMSessionInactivityTimer) * 60) - 30 
-        Set-Variable -name "XMSessionExpiry" -Value (get-Date).AddSeconds($timeToExpiry) -scope global
-
-        Write-Verbose ("Session expiry extended by " + $timeToExpiry + " sec. New expiry time is: " + $XMSessionExpiry)
+    #this functions checks the state of the session timeout. And will update in case the timeout type is inactivity. 
+    if ($XMSessionExpiry -gt (Get-Date)) {
+        Write-Verbose -Message "Session is still active."
+        #if we are using an inactivity timer (rather than static timeout), update the expiry time.
+        if ($XMSessionUseInactivity -eq $true) {
+            $TimeToExpiry = (($XMSessionInactivityTimer) * 60) - 30
+            Set-Variable -Name 'XMSessionExpiry' -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope global
+            Write-Verbose -Message 'Session expiry extended by ' + $TimeToExpiry + ' sec. New expiry time is: ' + $XMSessionExpiry
+        }
     }
-
-
-  } else {
-
-  Write-host "Session has expired. Please create a new XMSession using the new-XMSession command." -ForegroundColor Yellow
-
-  break 
-
-  }
-
+    else {
+        Write-Host 'Session has expired. Please create a new XMSession using the New-XMSession command.' -ForegroundColor Yellow
+        break 
+    }
 }
 
 #main functions. 
 
-function new-XMSession {
+function New-XMSession {
 <#
 .SYNOPSIS
 Starts a XMS session. Run this before running any other commands. 
@@ -232,136 +206,116 @@ This command can use either a username or password pair entered as variables, or
 run the get-credential command and store the output in a variable. 
 If both a user, password and credential are provided, the credential will take precedence. 
 
-.PARAMETER -user
+.PARAMETER -User
 Specify the user with required permissions to access the XenMobile API. 
 
-.PARAMETER -password
+.PARAMETER -Password
 Specify the password for the API user. 
 
-.PARAMETER -credential
+.PARAMETER -Credential
 Specify a PScredential object. This replaces the user and password parameters and can be used when stronger security is desired. 
 
-.PARAMETER -server
+.PARAMETER -Server
 Specify the server you will connect to. This should be a FQDN, not IP address. PowerShell is picky with regards to connectivity to encrypted paths. 
 Therefore, the servername must match the certificate, be valid and trusted by system you are running these commands. 
 
-.PARAMETER -port
+.PARAMETER -Port
 You can specify an alternative port to connect to the server. This is optional and will default to 4443 if not specified.
 
 .EXAMPLE
-new-XMSession -user "admin" -password "password" -server "mdm.citrix.com"
+New-XMSession -User "admin" -Password "password" -Server "mdm.citrix.com"
 
 .EXAMPLE
-new-XMSession -user "admin" -password "password" -server "mdm.citrix.com" -port "4443"
+New-XMSession -User "admin" -Password "password" -Server "mdm.citrix.com" -Port "4443"
 
 .EXAMPLE
-$credential = get-credential
-new-xmsession -credential $credential -server mdm.citrix.com
+$Credential = Get-Credential
+New-XMSession -Credential $Credential -Server mdm.citrix.com
 
 .EXAMPLE
-new-xmsession -credential (get-credential) -server mdm.citrix.com
+New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
 
 #>
 
-
     [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipelineByPropertyName, 
+            ValueFromPipeLine)]
+        [string]$User,
 
- param(
-    [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$user,
-    [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$password,
-    [parameter(valueFromPipelineByPropertyName,ValueFromPipeLine)]$credential=$null,
-    [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$server,
-    [parameter(ValueFromPipeLIneByPropertyName)][string]$port = "4443"
+        [Parameter(ValueFromPipelineByPropertyName,
+            ValueFromPipeLine)]
+        [string]$Password,
+
+        [Parameter(valueFromPipelineByPropertyName, 
+            ValueFromPipeLine)]
+        $Credential = $null,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+        ValueFromPipeLine)]
+        [string]$Server,
+
+        [Parameter(ValueFromPipeLIneByPropertyName)]
+        [string]$Port = '4443'
     )
+    process {
+        Write-Verbose -Message 'Setting the server port.'
+        Set-Variable -Name 'XMSServerPort' -Value '4443' -Scope Global
+        if ($Port.Length -gt 0 -and $Port -ne '4443') {
+            Set-Variable -Name 'XMSServerPort' -Value $Port -Scope Global
+        }
 
-Process {
-    
-    Write-Verbose "Setting the server port. "
-    if ($port -ne "4443") {
-        Set-Variable -name "XMSServerPort" -Value $port -scope Global 
-        } 
+        Write-Verbose -Message 'Creating an authentication token, and setting the XMSAuthToken and XMSServer variables'
+        #if a credential object is used, convert the secure password to a clear text string to submit to the server. 
+        if ($null -ne $Credential) {
+            $User = $Credential.username
+            $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.password)
+            $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+        }
+        try {
+            Set-Variable -Name 'XMSAuthToken' -Value (Get-XMAuthToken -User $User -Password $Password -Server $Server -Port $XMSServerPort) -Scope global -ErrorAction Stop
+        }
+        catch {
+            Write-host 'Authentication failed.' -ForegroundColor Yellow
+            break
+        }
+        #clear the password variable, to reduce chance of compromise
+        #$Password = $null
+        Clear-Variable -Name 'Password'
+
+        Set-Variable -Name 'XMSServer' -Value $Server -Scope global
+        #create variables to establish the session timeout. 
+        Set-Variable -Name 'XMSessionStart' -Value (Get-Date) -Scope global
+        Write-Verbose -Message "Setting session start to: $($XMSessionStart)"
+
+        #check if the timeout type is set to inactivity or static and set the global value accordingly. 
+        #if a static timeout is used, the session expiry can be set based on the static timeout. 
+        Write-Verbose -Message 'Checking the type of timeout the server uses:'
+        if ((Get-XMServerProperty -Name 'xms.publicapi.timeout.type' -SkipCheck $true).Value -eq 'INACTIVITY_TIMEOUT') {
+            Write-Verbose -Message 'Server is using an inactivity timeout for the API session. This is preferred.'
+            Set-Variable -Name 'XMSessionUseInactivity' -Value $true -Scope global
+            Set-Variable -Name 'XMSessionInactivityTimer' -Value ([System.Convert]::ToInt32((Get-XMServerProperty -Name 'xms.publicapi.inactivity.timeout' -SkipCheck $true).Value)) -Scope global
+            #due to network conditions and other issues, the actual timeout of the server may be quicker than here. So, we will reduce the timeout by 30 seconds.
+            $TimeToExpiry = (($XMSessionInactivityTimer) * 60) - 30 
+            Set-Variable -Name 'XMSessionExpiry' -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope global
+            Write-Verbose -Message "The session expiry time is set to: $($XMSessionExpiry)"
+        }
         else {
-        Set-Variable -name "XMSServerPort" -Value "4443" -scope Global
-        
+            Write-Verbose 'Server is using a static timeout. The use of an inactivity timeout is recommended.'
+            Set-Variable -Name 'XMSessionUseInactivity' -Value $false -Scope global
+            #get the static timeout and deduct 30 seconds. 
+            $TimeToExpiry = ([System.Convert]::ToInt32((Get-XMServerProperty -Name 'xms.publicapi.static.timeout' -SkipCheck $true).Value)) * 60 - 30
+            Write-Verbose -Message "Expiry in seconds: $($TimeToExpiry)"
+            Set-Variable -Name 'XMSessionExpiry' -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope global
+            Write-Verbose -Message "The session expiry time is set to: $($XMSessionExpiry)"
         }
-
-    Write-Verbose "creating an authentication token, and setting the XMSAuthToken and XMSServer variables"
-
-     #if a credential object is used, convert the secure password to a clear text string to submit to the server. 
-
-    if ($credential -ne $null) {
-        $user = $credential.username
-        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($credential.password)
-        $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
-        }
-
-    Try {
-
-        Set-Variable -name "XMSAuthToken" -Value (get-authToken -user $user -password $password -server $server -port $XMSServerPort) -Scope global -ErrorAction Stop } 
-
-   
-
-    catch
-        { Write-host "Authentication failed." -ForegroundColor Yellow
-        break
-         }
-
-    #clear the password variable, to reduce chance of compromise
-    $password = $null
-
-    Set-Variable -name "XMSServer" -Value $server -scope global
-    
-    #create variables to establish the session timeout. 
-    
-    Set-Variable -name "XMSessionStart" -Value (get-date) -scope global
-    Write-Verbose ("Setting session start to: " + $XMSessionStart )
-
-    #check if the timeout type is set to inactivity or static and set the global value accordingly. 
-    #if a static timeout is used, the session expiry can be set based on the static timeout. 
-
-    Write-Verbose "Checking the type of timeout the server uses:"
-
-    if ((get-XMServerProperty -name "xms.publicapi.timeout.type" -skipCheck $true).value -eq "INACTIVITY_TIMEOUT") {
-        Write-Verbose "   Server is using an inactivity timeout for the API session. This is preferred."
-
-        Set-Variable -name "XMSessionUseInactivity" -value $true -scope global
-        Set-Variable -name "XMSessionInactivityTimer" -Value ([convert]::ToInt32((get-XMServerProperty -name "xms.publicapi.inactivity.timeout" -skipCheck $true).value)) -scope global
-
-        #due to network conditions and other issues, the actual timeout of the server may be quicker than here. So, we will reduce the timeout by 30 seconds.
-        
-        $timeToExpiry = (($XMSessionInactivityTimer) * 60) - 30 
-        Set-Variable -name "XMSessionExpiry" -Value (get-Date).AddSeconds($timeToExpiry) -scope global
-
-        Write-verbose ("The session expiry time is set to: " + $XMSessionExpiry)
-
-
-    } else {
-        Write-Verbose "   Server is using a static timeout. The use of an inactivity timeout is recommended."
-
-        Set-Variable -name "XMSessionUseInactivity" -value $false -scope global
-
-        #get the static timeout and deduct 30 seconds. 
-
-        $timeToExpiry = ([convert]::ToInt32((get-XMServerProperty -name "xms.publicapi.static.timeout" -skipCheck $true).value))* 60 - 30
-        Write-Verbose ("expiry in seconds: " + $timeToExpiry)
-
-        Set-Variable -name "XMSessionExpiry" -Value (get-Date).AddSeconds($timeToExpiry) -scope global
-
-        Write-verbose ("The session expiry time is set to: " + $XMSessionExpiry)
-
-        }
-
-
-
-    Write-Verbose "A session has been started"
-    Write-host ("Authentication successfull. Token: " + $XMSAuthToken + "`nSession will expire at: " + $XMSessionExpiry) -ForegroundColor Yellow
+        Write-Verbose -Message 'A session has been started.'
+        Write-Host "Authentication successfull. Token: $($XMSAuthToken)`nSession will expire at: $($XMSessionExpiry)" -ForegroundColor Yellow
+    }
 }
 
 
-}
-
-
-function get-authToken {
+function Get-XMAuthToken {
 <#
 .SYNOPSIS
 This function will authenticate against the server and will provide you with an authentication token.
@@ -371,50 +325,54 @@ Most cmdlets in this module require a token in order to authenticate against the
 This cmdlet will authenticate against the server and provide you with a token. It requires a username, password and server address. 
 The cmdlet assumes you are connecting to port 4443. All parameters can be piped into this command.  
 
-.PARAMETER user
+.PARAMETER User
 Specify the username. This username must have API access. 
 
-.PARAMETER password
+.PARAMETER Password
 Specify the password to use. 
 
-.PARAMETER server
+.PARAMETER Server
 Specify the servername. IP addresses cannot be used. Do no specify a port number. Example: mdm.citrix.com
 
-.PARAMETER port
+.PARAMETER Port
 Specify the port to connect to. This defaults to 4443. Only specify this parameter is you are using a non-standard port. 
 
 .EXAMPLE
-$token = get-authToken -user "admin" -password "citrix123" -server "mdm.citrix.com
+$Token = Get-XMAuthToken -User "admin" -Password "citrix123" -Server "mdm.citrix.com
 #> 
- 
     param(
-    [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$user,
-    [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$password,
-    [parameter(ValueFromPipelineByPropertyName,ValueFromPipeLine)][string]$server,
-    [parameter(ValueFromPipeLIneByPropertyName)][string]$port = "4443"
+        [Parameter(ValueFromPipelineByPropertyName, 
+            ValueFromPipeLine)]
+        [string]$User,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            ValueFromPipeLine)]
+        [string]$Password,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            ValueFromPipeLine)]
+        [string]$Server,
+
+        [Parameter(ValueFromPipeLIneByPropertyName)]
+        [string]$Port = '4443'
     )
-
-        $URL = "https://" + $server + ":" + $port + "/xenmobile/api/v1/authentication/login"
-
-             
-        $header = @{ 'Content-Type' = 'application/json'}
-        $body = @{ 
-                    login = $user;
-                    password = $password
-                 }
-        Write-Verbose "Submitting authentication request"
-       
-       $returnedToken = Invoke-RestMethod -Uri $URL -Method Post -Body (ConvertTo-Json $body) -Headers $header
-       Write-Verbose ("received token: " + $returnedToken) 
-
-       return [string]$returnedToken.auth_token
-              
-    
+    $URL               = "https://$($Server):$($Port)/xenmobile/api/v1/authentication/login"
+    $Header            = @{
+        'Content-Type' = 'application/json'
+    }
+    $Body = @{
+        login          = $user;
+        password       = $password
+    }
+    Write-Verbose -Message 'Submitting authentication request.'
+    $ReturnedToken = Invoke-RestMethod -Uri $URL -Method POST -Body (ConvertTo-Json $Body) -Headers $Header
+    Write-Verbose -Message "Received token: $($ReturnedToken)"
+    return [string]$ReturnedToken.auth_token
 }
 
 # Enrollment functions
 
-function new-XMEnrollment {
+function New-XMEnrollment {
 <#
 .SYNOPSIS
 This command will create an enrollment for the specified user.
@@ -424,7 +382,7 @@ This command will create an enrollment for the specified user.
 Use this command to create enrollments. You can pipe parameters into this command from another command. 
 The command currently does not process notifications. It will return an object with details of the enrollment including the URL and PIN code (called secret).  
 
-.PARAMETER user
+.PARAMETER User
 The user parameter specifies the target user.
 This parameter is required. This is either the UPN or sAMAccountName depending on what you are using in your environment. 
 
@@ -432,25 +390,25 @@ This parameter is required. This is either the UPN or sAMAccountName depending o
 The OS parameter specifies the type of operating system. Options are iOS, SHTP.
 For android, use SHTP. This parameter is required. 
 
-.PARAMETER phoneNumber
+.PARAMETER PhoneNumber
 This is the phone number notifications will be sent to. The parameter is optional but without it no SMS notifications are sent. 
 
-.PARAMETER carrier
+.PARAMETER Carrier
 Specify the carrier to use. This is optional and only required in case multiple cariers and SMS gateway have been configured. 
 
-.PARAMETER deviceBindingType
+.PARAMETER DeviceBindingType
 You can specify either SERIALNUMBER, IMEI or UDID as the device binding paramater. This defaults to SERIALNUMBER. 
 This parameter is only useful if you also specify the deviceBindingData. 
 
-.PARAMETER deviceBindingData
+.PARAMETER DeviceBindingData
 By specifying devicebindingdata you can link an enrollment invitation to a specific device. Use the deviceBindingType to specify what you will use, 
 and specify the value here. For example, to bind to a serial number set the deviceBindingType to SERIALNUMBER and provide the serialnumber as the value of deviceBindingData. 
 
-.PARAMETER ownership
+.PARAMETER Ownership
 This parameter specifies the ownership of the device. Values are either CORPORATE or BYOD or NO_BINDING.
 Default value is NO_BINDING. 
 
-.PARAMETER mode
+.PARAMETER Mode
 This parameter specifes the type of enrollment mode you are using. Make sure the specified mode is enable on the server otherwise, an error will be thrown. 
 Default mode is classic. The select enrollment type must be enabled on the server. 
 Options are: 
@@ -462,137 +420,173 @@ invitation_pwd: generates an inivation and will request the user's password duri
 username_pin: generates a one time PIN and requires users to login with that pin and the username
 two_factor: generates an invitation url, a one time PIN and requires the user to login with, password and PIN. 
 
-.PARAMETER agentTemplate
+.PARAMETER AgentTemplate
 Specify the template to use when sending a notification to the user to download Secure Hub. The default is blank. 
 This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
 
-.PARAMETER invitationTemplate
+.PARAMETER InvitationTemplate
 Specify the template to use when sending a notification to the user to with the enrollment URL. The default is blank. 
 This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
 
-.PARAMETER pinTemplate
+.PARAMETER PinTemplate
 Specify the template to use when sending a notification for the one time PIN to the user. The default is blank. 
 This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
 
-.PARAMETER confirmationTemplate
+.PARAMETER ConfirmationTemplate
 Specify the template to use when sending a notification to the user at completion of the enrollment. The default is blank. 
 This value is case sensitive. To find out the correct name, create an enrollment invitation in the XMS GUI and view the available options for the notification template. 
 
-.PARAMETER notifyNow
+.PARAMETER NotifyNow
 Specify if you want to send notifications to the user. Value is either "true" or "false" (default.) 
 
 .EXAMPLE
-new-xmenrollment -user "ward@citrix.com" -OS "iOS" -ownership "BYOD" -mode "invitation_url"
+New-XMEnrollment -User "ward@citrix.com" -OS "iOS" -Ownership "BYOD" -Mode "invitation_url"
 
 .EXAMPLE
-import-csv -path users.csv | new-enrollment -OS iOS -ownership BYOD
+Import-Csv -Path users.csv | New-XMEnrollment -OS iOS -Ownership BYOD
 
 This will read a CSV file and create an enrolment for each of the entries.
 
 #>
-[CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
 
-param(
-    [parameter(ValueFromPipeLineByPropertyName,ValueFromPipeLine,mandatory=$true)][string]$user,
-    [parameter(ValueFromPipeLineByPropertyName,ValueFromPipeLine,mandatory=$true)][ValidateSet("iOS","SHTP")][string]$OS,
-    [parameter(valueFromPipelineByPropertyName)]$phoneNumber = $null,
-    [parameter(valueFromPipelineByPropertyName)]$carrier = $null,
-    [parameter(valueFromPipelineByPropertyName)][ValidateSet("SERIALNUMBER","UDID","IMEI")]$deviceBindingType = "SERIALNUMBER",
-    [parameter(valueFromPipelineByPropertyName)]$deviceBindingData = $null,
-    [parameter(ValueFromPipeLineByPropertyName,ValueFromPipeLine)][ValidateSet("CORPORATE","BYOD","NO_BINDING")][string]$ownership = "NO_BINDING",
-    [parameter(valueFromPipeLineByPropertyName)][ValidateSet("classic","high_security","invitation","invitation_pin","invitation_pwd","username_pin",
-    "two_factor")]$mode = "classic",
-    [parameter(ValueFromPipeLineByPropertyName)]$agentTemplate = $null,
-    [parameter(ValueFromPipeLineByPropertyName)]$invitationTemplate = $null,
-    [parameter(ValueFromPipeLineByPropertyName)]$pinTemplate = $null,
-    [parameter(ValueFromPipeLineByPropertyName)]$confirmationTemplate = $null,
-    [parameter(ValueFromPipeLineByPropertyName)][ValidateSet("true","false")]$notifyNow = "false",
-    [switch]$force
-    
-)
+    param(
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            ValueFromPipeLine, 
+            mandatory = $true)]
+        [string]$User,
 
-Begin {
-    #check session state
-    checkSession
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            ValueFromPipeLine, 
+            mandatory = $true)]
+        [ValidateSet('iOS', 
+            'SHTP')]
+        [string]$OS,
 
-    $RejectAll = $false
-    $ConfirmAll = $false
+        [Parameter(valueFromPipelineByPropertyName)]
+        $PhoneNumber = $null,
 
-}
+        [parameter(valueFromPipelineByPropertyName)]
+        $Carrier = $null,
 
-Process {
+        [Parameter(valueFromPipelineByPropertyName)]
+        [ValidateSet('SERIALNUMBER', 
+            'UDID', 
+            'IMEI')]
+        $DeviceBindingType = 'SERIALNUMBER',
 
-       if ($force -or $PSCmdlet.ShouldContinue("Do you want to continue?","Creating enrollment for '$user'",[ref]$ConfirmAll,[ref]$RejectAll)  ) {
+        [Parameter(valueFromPipelineByPropertyName)]
+        $DeviceBindingData = $null,
 
-                $body = @{
-                    platform = $OS
-                    deviceOwnership = $ownership
-                    mode = @{
-                            name = $mode
-                            }
-                    userName = $user
-                    notificationTemplateCategories = @(
-                        @{ 
-                            notificationTemplate = @{ name = $agentTemplate }
-                            category = "ENROLLMENT_AGENT"
-                         } 
-                        @{ 
-                            notificationTemplate = @{  name = $invitationTemplate }
-                            category = "ENROLLMENT_URL" 
-                         } 
-                        @{ 
-                            notificationTemplate = @{ name = $pinTemplate }
-                            category = "ENROLLMENT_PIN"
-                         } 
-                        @{ 
-                            notificationTemplate = @{ name = $confirmationTemplate }
-                            category = "ENROLLMENT_CONFIRMATION" 
-                         }
-                
-                
-                    )          
-            
-            
-                    phoneNumber = $phoneNumber
-                    carrier = $carrier
-                    deviceBindingType = $deviceBindingType
-                    deviceBindingData = $deviceBindingData
-                    notifyNow = $notifyNow
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            ValueFromPipeLine)]
+        [ValidateSet('CORPORATE', 
+            'BYOD', 
+            'NO_BINDING')]
+        [string]$Ownership = 'NO_BINDING',
+
+        [Parameter(valueFromPipeLineByPropertyName)]
+        [ValidateSet('classic', 
+            'high_security', 
+            'invitation', 
+            'invitation_pin', 
+            'invitation_pwd', 
+            'username_pin', 
+            'two_factor')]
+        $Mode = 'classic',
+
+        [Parameter(ValueFromPipeLineByPropertyName)]
+        $AgentTemplate = $null,
+
+        [Parameter(ValueFromPipeLineByPropertyName)]
+        $InvitationTemplate = $null,
+
+        [Parameter(ValueFromPipeLineByPropertyName)]
+        $PinTemplate = $null,
+
+        [Parameter(ValueFromPipeLineByPropertyName)]
+        $ConfirmationTemplate = $null,
+
+        [Parameter(ValueFromPipeLineByPropertyName)]
+        [ValidateSet('true', 
+            'false')]
+        $NotifyNow = 'false',
+
+        [switch]$Force
+    )
+
+    begin {
+        #check session state
+        checkSession
+        $RejectAll  = $false
+        $ConfirmAll = $false
+    }
+
+    process {
+        if ($Force -or $PSCmdlet.ShouldContinue('Do you want to continue?', "Creating enrollment for '$($User)'", [ref]$ConfirmAll, [ref]$RejectAll)) {
+            $Body = @{
+                platform = $OS
+                deviceOwnership = $Ownership
+                mode = @{
+                    name = $Mode
                 }
-
-                Write-Verbose "Created enrollment request object for submission to server. "
-
-          
-                $enrollmentResult = postObject -url "/enrollment" -target $body -ErrorAction Stop
-                Write-Verbose "Enrollment invitation submitted."
-          
-                # the next portion of the function will download additional information about the enrollment request
-                # this is pointless if the invitation was not correctly created due to an error with the request. 
-                # Hence, we only run this, if there is an actual invitation in the enrollmentResult value. 
-
-                if ($enrollmentResult -ne $null) {
-                    Write-Verbose "An enrollment invication was created. Searching for additional details. "
-                    $searchresult = search -url "/enrollment/filter" -criteria $enrollmentResult.token
-                    $enrollment = $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
-                    $enrollment | Add-Member -NotePropertyName url -NotePropertyValue $enrollmentResult.url
-                    $enrollment | Add-Member -NotePropertyName message -NotePropertyValue $enrollmentResult.message
-                    $enrollment | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
-                    return $enrollment 
-                } 
-                else {
-                Write-Host "The server was unable to create an enrollment invitation for '$user'. Common causes are connectivity issues, as well as errors in the information supplied such as username, template names etc. Ensure all values in the request are correct." -ForegroundColor Yellow
-                }
-
+                userName = $User
+                notificationTemplateCategories = @(
+                    @{
+                        notificationTemplate = @{
+                            name = $AgentTemplate
+                        }
+                        category = 'ENROLLMENT_AGENT'
+                    }
+                    @{
+                        notificationTemplate = @{
+                            name = $InvitationTemplate
+                        }
+                        category = 'ENROLLMENT_URL'
+                    }
+                    @{
+                        notificationTemplate = @{
+                            name = $PinTemplate
+                        }
+                        category = 'ENROLLMENT_PIN'
+                    }
+                    @{
+                        notificationTemplate = @{
+                            name = $ConfirmationTemplate
+                        }
+                        category = 'ENROLLMENT_CONFIRMATION'
+                    }
+                )
+                phoneNumber = $PhoneNumber
+                carrier = $Carrier
+                deviceBindingType = $DeviceBindingType
+                deviceBindingData = $DeviceBindingData
+                notifyNow = $NotifyNow
             }
-            
-      
+            Write-Verbose -Message 'Created enrollment request object for submission to server.'
+            $EnrollmentResult = postObject -Url '/enrollment' -Target $Body -ErrorAction Stop
+            Write-Verbose -Message "Enrollment invitation submitted."
+            # the next portion of the function will download additional information about the enrollment request
+            # this is pointless if the invitation was not correctly created due to an error with the request. 
+            # Hence, we only run this, if there is an actual invitation in the enrollmentResult value. 
+            if ($null -ne $EnrollmentResult) {
+                Write-Verbose -Message 'An enrollment invication was created. Searching for additional details.'
+                $SearchResult = Search-XMObject -Url '/enrollment/filter' -Criteria $EnrollmentResult.token
+                $Enrollment = $SearchResult.enrollmentFilterResponse.enrollmentList.enrollments
+                $Enrollment | Add-Member -NotePropertyName url -NotePropertyValue $EnrollmentResult.url
+                $Enrollment | Add-Member -NotePropertyName message -NotePropertyValue $EnrollmentResult.message
+                $Enrollment | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $SearchResult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
+                return $Enrollment 
+            } 
+            else {
+                Write-Host "The server was unable to create an enrollment invitation for '$($User)'. Common causes are connectivity issues, as well as errors in the information supplied such as username, template names etc. Ensure all values in the request are correct." -ForegroundColor Yellow
+            }
+        }
+    }
 }
 
-
-
-}
-
-function get-XMEnrollment {
+function Get-XMEnrollment {
 <#
 .SYNOPSIS
 Searches for enrollment invitations. 
@@ -622,43 +616,41 @@ enrollment.invitationStatus.failed
 By default, only the first 1000 entries will be returned. You can override this value to get more (or less) results. 
 
 .EXAMPLE
-get-XMenrollment 
+Get-XMEnrollment 
 
 .EXAMPLE
-get-XMEnrollment -user "ward@citrix.com"
+Get-XMEnrollment -User "ward@citrix.com"
 
 .EXAMPLE
-get-XMEnrollment -filter "[enrollment.invitationStatus.expired]"
+Get-XMEnrollment -Filter "[enrollment.invitationStatus.expired]"
 
 #>
-
     [CmdletBinding()]
-
     param(
-    
-        [parameter(ValueFromPipelineByPropertyName)][string]$user,
-        [parameter()][string]$filter = "[]",
-        [parameter()][int]$ResultSetSize = 999
-        )
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$User,
 
-Begin {
-    #check session state
-    checkSession
-}
+        [Parameter()]
+        [string]$Filter = '[]',
 
-    Process {
-
-        $searchresult = search  -url "/enrollment/filter" -criteria $user -filterIds $filter -ResultSetSize $ResultSetSize
-        $resultset =  $searchresult.enrollmentFilterResponse.enrollmentList.enrollments
-        $resultset | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
-        return $resultset
+        [Parameter()]
+        [int]$ResultSetSize = 999
+    )
+    begin {
+        #check session state
+        checkSession
     }
-
+    process {
+        $Searchresult = Search-XMObject  -Url '/enrollment/filter' -Criteria $User -FilterIds $Filter -ResultSetSize $ResultSetSize
+        $ResultSet =  $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments
+        $ResultSet | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
+        return $ResultSet
+    }
 }
 
 # fuctions to manage devices. 
 
-function get-XMDevice {
+function Get-XMDevice {
 <#
 .SYNOPSIS
 Basic search function to find devices
@@ -667,11 +659,11 @@ Basic search function to find devices
 Search function to find devices. If you specify the user parameter, you get all devices for a particular user. 
 The devices are returned as an array of objects, each object representing a single device. 
 
-.PARAMETER criteria
+.PARAMETER Criteria
 Specify a search criteria. If you specify a UPN or username, all enrollments for the username will be returned. 
 It also possible to provide other values such as serial number to find devices. Effectively, anything that will work in the 'search' field in the GUI will work here as well.    
 
-.PARAMETER filter
+.PARAMETER Filter
 Specify a filter to further reduce the amount of data returned.  The syntax is "[filter]". For example, to see all MDM device enrolments, use "[device.mode.mdm.managed,device.mode.mdm.unmanaged]".
 Here are some of the filters: 
 device.mode.enterprise.managed
@@ -700,29 +692,28 @@ device.inactive.time.8.hours
 By default only the first 1000 records are returned. Specify the resultsetsize to get more records returned. 
 
 .EXAMPLE
-get.XMDevice -criteria "ward@citrix.com" -filter "[device.mode.enterprise.managed]"
+Get-XMDevice -Criteria "ward@citrix.com" -Filter "[device.mode.enterprise.managed]"
 
 #>
-
-     [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipeline)][string]$criteria,
-        [parameter()][string]$filter = "[]",
-        [parameter()][int]$ResultSetSize = 999
+        [Parameter(ValueFromPipeline)]
+        [string]$Criteria,
+
+        [Parameter()]
+        [string]$Filter = '[]',
+
+        [Parameter()]
+        [int]$ResultSetSize = 999
     )
-
-   Begin {
-    #check session state
-    checkSession
+    begin {
+        #check session state
+        checkSession
     } 
-
-   Process { 
-    
-      $results = search -url "/device/filter" -criteria $criteria -filterIds $filter -ResultSetSize $ResultSetSize
-      return $results.filteredDevicesDataList 
+    process { 
+        $Results = Search-XMObject -Url '/device/filter' -Criteria $Criteria -FilterIds $Filter -ResultSetSize $ResultSetSize
+        return $Results.filteredDevicesDataList 
     }
-
 }
 
 function Remove-XMDevice {
@@ -733,42 +724,31 @@ Removes a device from the XMS server and database.
 .DESCRIPTION
 Removes a devices from the XMS server. Requires the id of the device. 
 
-.PARAMETER id
+.PARAMETER Id
 The id parameter identifies the device. You can get the id by searching for the correct device using get-device. 
 
 .EXAMPLE
-remove-xmdevice -id "21" 
+Remove-XMDevice -Id "21" 
 
 .EXAMPLE
-get-xmdevice -user "ward@citrix.com | %{ remove-xmdevice -id $_.id }
-
-
+Get-XMDevice -User "ward@citrix.com | ForEach-Object { Remove-XMDevice -Id $PSItem.id }
 #>
-
-     [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-       
-        [parameter(ValueFromPipeLineByPropertyName,mandatory)][string[]]$id
-      
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            mandatory)]
+        [string[]]$Id
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($id)) {
-
-            deleteObject -url "/device" -target $id
+    process {
+        if ($PSCmdlet.ShouldProcess($Id)) {
+            Remove-XMObject -Url '/device' -Target $Id
         }
-
-        }
-
-
-
+    }
 }
 
 function Update-XMDevice {
@@ -779,38 +759,30 @@ Sends a deploy command to the selected device. A deploy will trigger a device to
 .DESCRIPTION
 Sends a deploy command to the selected device. 
 
-.PARAMETER id
+.PARAMETER Id
 This parameter specifies the id of the device to target. This can be pipelined from a search command. 
 
 .EXAMPLE
-update-xmdevice -id "24" 
+Update-XMDevice -Id "24" 
 
 .EXAMPLE
-get-xmdevice -user "aford@corp.vanbesien.com" | update-xmdevice
+Get-XMDevice -User "aford@corp.vanbesien.com" | Update-XMDevice
 
 #>
-
-
-
- [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory=$true)][int[]]$id
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory = $true)]
+        [int[]]$Id
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        $message = "This will send an update to device " + $id
-     
-        postObject -url "/device/refresh" -target $id
-  
+    process {
+        write-verbose -Message "This will send an update to device $($Id)"
+        postObject -Url '/device/refresh' -Target $Id
     }
-
 }
 
 function Invoke-XMDeviceWipe {
@@ -825,36 +797,28 @@ Sends a device wipe command. this is similar to a factory reset
 This parameter specifies the id of the device to wipe. This can be pipelined from a search command. 
 
 .EXAMPLE
-invoke-xmdevicewipe -id "24" 
+Invoke-XMDeviceWipe -Id "24" 
 
 .EXAMPLE
-get-xmdevice -user "ward@citrix.com" | invoke-xmdevicewipe
+Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceWipe
 
 #>
-
-
-
- [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory=$true)][int[]]$id
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory = $true)]
+        [int[]]$Id
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($id)) {
-
-            postObject -url "/device/wipe" -target $id
+    process {
+        if ($PSCmdlet.ShouldProcess($Id)) {
+            postObject -Url '/device/wipe' -Target $Id
         }
-
     }
-
-
 }
 
 function Invoke-XMDeviceSelectiveWipe {
@@ -865,41 +829,35 @@ Sends a selective device wipe command to the selected device.
 .DESCRIPTION
 Sends a selective device wipe command. This removes all policies and applications installed by the server but leaves the rest of the device alone.
 
-.PARAMETER id
+.PARAMETER Id
 This parameter specifies the id of the device to wipe. This can be pipelined from a search command. 
 
 .EXAMPLE
-invoke-XMDeviceSelectiveWipe -id "24" 
+Invoke-XMDeviceSelectiveWipe -Id "24"
 
 .EXAMPLE
-get-XMDevice -user "ward@citrix.com" | invoke-XMDeviceSelectiveWipe
+Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceSelectiveWipe
 
 #>
-
-
- [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact='High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory=$true)][int[]]$id
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory = $true)]
+        [int[]]$Id
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
+    process {
         if ($PSCmdlet.ShouldProcess($id)) {
-            
-            postObject -url "/device/selwipe" -target $id
-
-         }
+            postObject -Url '/device/selwipe' -Target $Id
+        }
     }
-
 }
 
-function get-XMDeviceDeliveryGroups {
+function Get-XMDeviceDeliveryGroups {
 <#
 .SYNOPSIS
 Displays the delivery groups for a given device specified by id.
@@ -908,36 +866,30 @@ Displays the delivery groups for a given device specified by id.
 This command lets you find all the delivery groups that apply to a particular device. You search based the ID of the device.
 To find the device id, use get-XMDevice.
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
 .EXAMPLE
-get-XMDeviceDeliveryGroups -id "8" 
+Get-XMDeviceDeliveryGroups -Id "8"
 
 #>
-
-     [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/" + $id + "/deliverygroups" )
-    return $result.deliveryGroups
-
+    process {
+        $Result = getObject -Url "/device/$($Id)/deliverygroups"
+        return $Result.deliveryGroups
     }
-
 }
 
-function get-XMDeviceActions {
+function Get-XMDeviceActions {
 <#
 .SYNOPSIS
 Displays the smart actions applied to a given device specified by id.
@@ -946,37 +898,30 @@ Displays the smart actions applied to a given device specified by id.
 This command lets you find all the smart actions available that apply to a particular device. You search based the ID of the device.
 To find the device id, use get-XMDevice.
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
 .EXAMPLE
-get-XMDeviceActions -id "8" 
+Get-XMDeviceActions -Id "8"
 
 #>
-
-     [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/" + $id + "/actions" )
-    return $result
-
+    process {
+        $Result = getObject -Url "/device/$($Id)/actions"
+        return $Result
     }
-
-    
 }
 
-function get-XMDeviceApps { 
+function Get-XMDeviceApps { 
 <#
 .SYNOPSIS
 Displays all XenMobile store apps installed on a device, whether or ot the app was installed from the XenMobile Store 
@@ -987,38 +932,30 @@ For apps that are NOT managed, an inventory policy is required to detect them.
 
 This command is useful to find out which of the XenMobile store apps are installed (whether or not they are managed or installed from the XenMobile store).  
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
 .EXAMPLE
-get-XMDeviceApps -id "8" 
+Get-XMDeviceApps -Id "8" 
 
 #>
-
-     [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/" + $id + "/apps" )
-    return $result.applications
-
+    process {
+        $Result = getObject -Url "/device/$($Id)/apps"
+        return $Result.applications
     }
-
-
-
 }
 
-function get-XMDeviceManagedApps { 
+function Get-XMDeviceManagedApps { 
 <#
 .SYNOPSIS
 Displays the XMS managed apps for a given device specified by id. Managed Apps include those apps installed from the XenMobile Store.  
@@ -1028,38 +965,29 @@ This command displays all managed applications on a particular device. Managed a
 If a public store app is installed through policy on a device where the app is already installed, the user is given the option to have XMS manage the app. In that case, the app will be included in the output of this command. 
 If the user chooses not to let XMS manage the App, it will not be included in the output of this command. the get-XMDeviceApps will still list that app. 
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
 .EXAMPLE
-get-XMDeviceManagedApps -id "8" 
-
+Get-XMDeviceManagedApps -Id "8" 
 #>
-
-     [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/" + $id + "/managedswinventory" )
-    return $result.softwareinventory
-
+    process {
+        $Result = getObject -Url "/device/$($Id)/managedswinventory"
+        return $Result.softwareinventory
     }
-
-
-
 }
 
-function get-XMDeviceSoftwareInventory { 
+function Get-XMDeviceSoftwareInventory { 
 <#
 .SYNOPSIS
 Displays the application inventory of a particular device.   
@@ -1067,38 +995,29 @@ Displays the application inventory of a particular device.
 .DESCRIPTION
 This command will list all installed applications as far as the server knows. Apps managed by the server are always included, other apps (such as personal apps) are only included if an inventory policy is deployed to the device. 
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
 .EXAMPLE
-get-XMDeviceSoftwareInventory -id "8" 
-
-#> 
-
-     [CmdletBinding()]
-
+Get-XMDeviceSoftwareInventory -Id "8" 
+#>
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/" + $id + "/softwareinventory" )
-    return $result.softwareInventories
-
+    process {
+        $Result = getObject -Url "/device/$($Id)/softwareinventory"
+        return $Result.softwareInventories
     }
-
-
-
 }
 
-function get-XMDeviceInfo {
+function Get-XMDeviceInfo {
 <#
 .SYNOPSIS
 Displays the properties of a particular device.   
@@ -1107,38 +1026,29 @@ Displays the properties of a particular device.
 This command will output all properties, settings, configurations, certificates etc of a given device. This is typically an extensive list that may need to be further filtered down.
 This command aggregates a lot of information available through other commands as well. 
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
 .EXAMPLE
-get-XMDeviceInfo -id "8" 
-
+Get-XMDeviceInfo -Id "8"
 #>  
-
- [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/" + $id )
-    return $result.device
-
+    process {
+        $Result = getObject -Url "/device/$($Id)"
+        return $Result.device
     }
-
-
-
 }
 
-function get-XMDevicePolicy {
+function Get-XMDevicePolicy {
 <#
 .SYNOPSIS
 Displays the policies applies to a particular device.   
@@ -1146,38 +1056,29 @@ Displays the policies applies to a particular device.
 .DESCRIPTION
 This command will list the policies applied to a particular device. 
  
- .PARAMETER id
-Specify the ID of the device. Use get-XMDevice to find the id of each device.  
+.PARAMETER Id
+Specify the ID of the device. Use Get-XMDevice to find the id of each device.  
 
 .EXAMPLE
-get-XMDevicePolicy -id "8" 
-
+Get-XMDevicePolicy -Id "8"
 #>  
-
-
- [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/" + $id + "/policies")
-    return $result.policies
-
+    process {
+        $Result = getObject -Url "/device/$($Id)/policies"
+        return $Result.policies
     }
-
-
 }
 
-function get-XMDeviceProperty {
+function Get-XMDeviceProperty {
 <#
 .SYNOPSIS
 Gets the properties for the device. 
@@ -1185,42 +1086,32 @@ Gets the properties for the device.
 .DESCRIPTION
 Gets the properties for the device. This is different from the get-xmdeviceinfo command which includes the properties but also returns all other information about a device. This command returns a subset of that data. 
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device for which you want to get the properties. 
 
 .EXAMPLE
-get-xmdeviceproperty -id "8" 
+Get-XMDeviceProperty -Id "8"
 
 .EXAMPLE
-get-xmdevice -name "Ward@citrix.com" | get-xmdeviceproperties
-
-
+Get-XMDevice -Name "Ward@citrix.com" | Get-XMDeviceProperties
 #>
-
-
-     [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/device/properties/" + $id )
-    return $result.devicePropertiesList.deviceProperties.devicePropertyParameters
-
+    process {
+        $Result = getObject -Url "/device/properties/$($Id)"
+        return $Result.devicePropertiesList.deviceProperties.devicePropertyParameters
     }
-
-
 }
 
-function set-XMDeviceProperty {
+function Set-XMDeviceProperty {
 <#
 .SYNOPSIS
 adds, changes a properties for a device. 
@@ -1231,109 +1122,97 @@ WARNING, avoid making changes to properties that are discovered by the existing 
 
 One property that is often changed is the ownership of a device. That property is called "CORPORATE_OWNED". Value '0' means BYOD, '1' means corporate and for unknown the property doesn't exist. 
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device for which you want to get the properties. 
 
-.PARAMETER name
+.PARAMETER Name
 Specify the name of the property. Such as "CORPORATE_OWNED" 
 
-.PARAMETER value
+.PARAMETER Value
 Specify the value of the property. 
 
 .EXAMPLE
-set-xmdeviceproperty -id "8" -name "CORPORATE_OWNED" -value "1"
-
-
+Set-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED" -Value "1"
 #>
-
-
-     [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact='High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$name,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$value
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Name,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Value
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($id)) {
-
-            $body = @{
-                name = $name;
-                value = $value
+    process {
+        if ($PSCmdlet.ShouldProcess($Id)) {
+            $Body     = @{
+                name  = $Name;
+                value = $Value
             }
-
-            postObject -url ("/device/property/" + $id) -target $body
-    
+            postObject -Url "/device/property/$($Id)" -Target $Body
         }
     }
-
-
 }
 
-function remove-XMDeviceProperty { 
+function Remove-XMDeviceProperty { 
 <#
 .SYNOPSIS
-deletes a properties for a device. 
+Deletes a properties for a device. 
 
 .DESCRIPTION
 Delete a property from a device. 
 WARNING: be careful when using this function. There is no safety check to ensure you don't accidentally delete things you shouldn't.
 
-.PARAMETER id
+.PARAMETER Id
 Specify the ID of the device for which you want to get the properties. 
 
-.PARAMETER name
+.PARAMETER Name
 Specify the name of the property. Such as "CORPORATE_OWNED" 
 
 .EXAMPLE
-remove-XMDeviceProperty -id "8" -name "CORPORATE_OWNED"
-
-
+Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
 #>
-
-
-     [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$id,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$name
-      
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Id,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Name
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($id)) {
-
+    process {
+        if ($PSCmdlet.ShouldProcess($Id)) {
             #the property is deleted based on the id of the property which is unique. 
             #thus, we first look for the property
-
-            $property = get-XMDeviceProperty -id $id | where-object { $_.name -eq $name } 
-
-            write-verbose ("Property id for property: " + $name + " is " + $property.id   )
-     
-             deleteObject -url ("/device/property/" + $property.id) -target $null
+            $Property = Get-XMDeviceProperty -Id $Id | Where-Object {
+                $PSItem.name -eq $Name
+            }
+            Write-Verbose -Message "Property id for property: $($Name) is $($Property.id)"
+            Remove-XMObject -Url "/device/property/$($Property.id)" -Target $null
         }
-
     }
-
 }
 
 #functions to manage server properties. 
 
-function get-XMServerProperty {
+function Get-XMServerProperty {
 <#
 .SYNOPSIS
 Queries the server for server properties. 
@@ -1345,67 +1224,55 @@ Queries the server for server properties. Without any parameters, this command w
 Specify the parameter for which you want to get the values. The parameter name typically looks like xms.publicapi.static.timeout. 
 
 .EXAMPLE
-get-xmserverProperty  #returns all properties
+Get-XMServerProperty  #returns all properties
 
 .EXAMPLE
-get-xmserverProperty -name "xms.publicapi.static.timeout"
+Get-XMServerProperty -Name "xms.publicapi.static.timeout"
 
 #>
-
-     [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipeline)][string]$name = $null,
-        [parameter(dontshow)][bool]$skipCheck = $false
-        
+        [Parameter(ValueFromPipeline)]
+        [string]$Name = $null,
+
+        [Parameter(dontshow)]
+        [bool]$SkipCheck = $false
     )
-
-   Begin {
-
-   #The get-xmserverproperty function is called during the xmsession setup in order to specify the timeout values. 
-   #If you check the session during this time, the check will fail. 
-   #using the hidden skipcheck parameter, we can override the check during the initial xmsession setup. 
-
-        if (!$skipCheck) {
-        
-        Write-verbose "Checking the session state"
-
-         #check session state. 
-         checkSession
-
-         } else {
-         write-verbose "The session check is skipped."
-         }
-    }    
-
-   Process { 
-
-   Write-Verbose "Creating the Get-xmserverproperty request."
-
-    $request.method = "POST"
-    $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1/serverproperties/filter" 
-    $request.header = @{ 'auth_token' = $XMSAuthtoken ;
-            'Content-Type' = 'application/json' }
-
-    $request.body = @{
-        start = "0";
-        limit = "1000";
-        orderBy = "name";
-        sortOrder =  "desc";
-        searchStr = $name;
+    begin {
+        #The get-xmserverproperty function is called during the xmsession setup in order to specify the timeout values.
+        #If you check the session during this time, the check will fail.
+        #using the hidden skipcheck parameter, we can override the check during the initial xmsession setup.
+        if (!$SkipCheck) {
+            Write-verbose -Message 'Checking the session state'
+            #check session state.
+            checkSession
         }
-
-    Write-Verbose "Submitting the get-xmsserverproperty request to the server"
-     $results = submitToServer $request 
-          
-      return $results.allEwProperties
-     
+        else {
+            write-verbose -Message 'The session check is skipped.'
+        }
     }
-
-        
+    process {
+        Write-Verbose -Message 'Creating the Get-xmserverproperty request.'
+        $Request.method    = 'POST'
+        $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1/serverproperties/filter"
+        $Request.header    = @{
+            'auth_token'   = $XMSAuthToken;
+            'Content-Type' = 'application/json'
+        }
+        $Request.body      = @{
+            start          = '0';
+            limit          = '1000';
+            orderBy        = 'name';
+            sortOrder      = 'desc';
+            searchStr      = $Name;
+        }
+        Write-Verbose -Message 'Submitting the Get-XMServerProperty request to the server.'
+        $Results = Invoke-XMRequest -Request $Request
+        return $Results.allEwProperties
+    }
 }
 
-function set-XMServerProperty {
+function Set-XMServerProperty {
 <#
 .SYNOPSIS
 Sets the server for server properties. 
@@ -1413,75 +1280,69 @@ Sets the server for server properties.
 .DESCRIPTION
 Changes the value of an existing server property.  
 
-.PARAMETER name
+.PARAMETER Name
 Specify the name of the property to change. The parameter name typically looks like xms.publicapi.static.timeout. 
 
-.PARAMETER value
+.PARAMETER Value
 Specify the new value of the property. 
 
-.PARAMETER displayName
+.PARAMETER DisplayName
 Specify a new display name. This parameter is optional. If not specified the existing display name is used. 
 
-.PARAMETER description
+.PARAMETER Description
 Specify a new description. This parameter is optional. If not specified the existing description is used. 
 
 .EXAMPLE
-set-xmserverProperty -name "xms.publicapi.static.timeout" -value "45"
-
+Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
 #>
-
-  [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$name,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$value,
-        [parameter(ValueFromPipelineByPropertyName)][string]$displayName = $null,
-        [parameter(ValueFromPipelineByPropertyName)][string]$description = $null
-        
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Name,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Value,
+
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$DisplayName = $null,
+
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$Description = $null
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-    
-   Process { 
-
-    if ($PSCmdlet.ShouldProcess($name)) {
-    
+    process {
+        if ($PSCmdlet.ShouldProcess($name)) {
             #if no displayname or description is provided, search for the existing values and use those. 
-
-            if (!$displayName) {
-                $displayName = (get-xmserverproperty -name $name).displayName
+            if (!$DisplayName) {
+                $DisplayName = (Get-XMServerProperty -Name $Name).displayName
             }
-    
-            if (!$description) {
-                $description = (get-xmserverproperty -name $name).description
-
+            if (!$Description) {
+                $Description = (Get-XMServerProperty -Name $Name).description
             }
-
-
-            $request.method = "PUT"
-            $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1/serverproperties" 
-            $request.header = @{ 'auth_token' = $XMSAuthtoken ;
-                    'Content-Type' = 'application/json' }
-
-            $request.body = @{
-                name = $name;
-                value = $value;
-                displayName = $displayName;
-                description = $description;
-                }
-
-                submitToServer $request
+            $Request.method    = 'PUT'
+            $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1/serverproperties" 
+            $Request.header    = @{
+                'auth_token'   = $XMSAuthToken;
+                'Content-Type' = 'application/json'
+            }
+            $Request.body      = @{
+                name           = $Name;
+                value          = $Value;
+                displayName    = $DisplayName;
+                description    = $Description;
+            }
+            Invoke-XMRequest -Request $Request
         } 
     }
-    
-
-
 }
 
-function new-XMserverproperty {
+function New-XMserverProperty {
 <#
 .SYNOPSIS
 Create a new server property.  
@@ -1489,63 +1350,64 @@ Create a new server property.
 .DESCRIPTION
 Creates a new server property. All parameters are required.   
 
-.PARAMETER name
+.PARAMETER Name
 Specify the name of the property. The parameter name typically looks like xms.publicapi.static.timeout. 
 
-.PARAMETER value
+.PARAMETER Value
 Specify the value of the property. The value set during creation becomes the default value. 
 
-.PARAMETER displayName
+.PARAMETER DisplayName
 Specify a the display name.  
 
-.PARAMETER description
+.PARAMETER Description
 Specify a the description. 
 
 .EXAMPLE
-new-xmserverProperty  -name "xms.something.something" -value "indeed" -displayName "something" -description "a something property."
-
+New-XMServerProperty -Name "xms.something.something" -Value "indeed" -DisplayName "something" -Description "a something property."
 #>
-
-
-
-[CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$name,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$value,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$displayName,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$description
-        
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Name,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Value,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$DisplayName,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Description
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
     process {
-
-        if ($PSCmdlet.ShouldProcess($name)) {
-
-            $request.method = "POST"
-            $request.url = "https://" + $XMSServer + ":" + $XMSServerPort + "/xenmobile/api/v1/serverproperties" 
-            $request.header = @{ 'auth_token' = $XMSAuthtoken ;
-                    'Content-Type' = 'application/json' }
-
-            $request.body = @{
-                name = $name;
-                value = $value;
-                displayName = $displayName;
-                description = $description;
-                }
-
-                submitToServer $request
+        if ($PSCmdlet.ShouldProcess($Name)) {
+            $Request.method    = 'POST'
+            $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1/serverproperties" 
+            $Request.header    = @{
+                'auth_token'   = $XMSAuthToken;
+                'Content-Type' = 'application/json'
+            }
+            $Request.body      = @{
+                name           = $Name;
+                value          = $Value;
+                displayName    = $DisplayName;
+                description    = $Description;
+            }
+            Invoke-XMRequest -Request $Request
         }
     }
-    
 }
 
-function remove-XMserverproperty {
+function Remove-XMserverProperty {
 <#
 .SYNOPSIS
 Removes a server property. 
@@ -1553,43 +1415,34 @@ Removes a server property.
 .DESCRIPTION
 Removes a server property. This command accepts pipeline input.  
 
-.PARAMETER name
+.PARAMETER Name
 Specify the name of the propery to remove. This parameter is mandatory. 
 
 .EXAMPLE
-remove-XMserverproperty -name "xms.something.something"
-
-
+Remove-XMServerProperty -Name "xms.something.something"
 #>
-
-[CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string[]]$name
-            
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string[]]$Name
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($name)) {
-
-                Write-Verbose ("Deleting " + $name)
-
-                deleteObject -url "/serverproperties" -target $name
+    process {
+        if ($PSCmdlet.ShouldProcess($Name)) {
+            Write-Verbose "Deleting $($Name)"
+            Remove-XMObject -Url "/serverproperties" -Target $Name
         }
-
     }
-
 }
 
 #functions to manage client properties. (Client is WorxHome / Secure Hub)
 
-function get-XMClientProperty {
+function Get-XMClientProperty {
 <#
 .SYNOPSIS
 Queries the server for client properties. 
@@ -1597,41 +1450,31 @@ Queries the server for client properties.
 .DESCRIPTION
 Queries the server for server properties. Without any parameters, this command will return all properties. 
 
-.PARAMETER key
+.PARAMETER Key
 Specify the parameter for which you want to get the values. The parameter key typically looks like ENABLE_PASSWORD_CACHING. 
 
 .EXAMPLE
-get-xmclientProperty  #returns all properties
+Get-XMClientProperty  #returns all properties
 
 .EXAMPLE
-get-xmclientProperty -key "ENABLE_PASSWORD_CACHING"
-
+Get-XMClientProperty -Key "ENABLE_PASSWORD_CACHING"
 #>
-
- [CmdletBinding()]
-
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName)][string]$key = $null
-      
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$Key = $null
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-    $result = getObject -url ( "/clientproperties/" + $key )
-    return $result.allClientProperties
-
+    process {
+        $Result = getObject -Url "/clientproperties/$($Key)"
+        return $Result.allClientProperties
     }
-
-
-
 }
 
-function new-XMClientProperty {
+function New-XMClientProperty {
 <#
 .SYNOPSIS
 Creates a new client property. 
@@ -1639,130 +1482,124 @@ Creates a new client property.
 .DESCRIPTION
 Creates a new client property. All parameters are required. Use this to create/add new properties. To change an existing property, use set-xmclientproperty
 
-.PARAMETER displayname
+.PARAMETER Displayname
 Specify name of the property. 
 
-.PARAMETER description
+.PARAMETER Description
 Specify the description of the property.
 
-.PARAMETER key
+.PARAMETER Key
 Specify the key. 
 
-.PARAMETER value
+.PARAMETER Value
 Specify the value of the property. The value set when the property is created is used as the default value. 
 
 .EXAMPLE
-new-xmclientProperty  -displayname "Enable touch ID" -description "Enables touch ID" -key "ENABLE_TOUCH_ID_AUTH" -value "true"
-
+New-XMClientProperty -Displayname "Enable touch ID" -Description "Enables touch ID" -Key "ENABLE_TOUCH_ID_AUTH" -Value "true"
 #>
-
- [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$displayname,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$description,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$key,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$value
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Displayname,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Description,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Key,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Value
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($key)) {        
-               
-                $body = @{
-                    displayName = $displayname;
-                    description = $description;
-                    key = $key;
-                    value = $value
-                }
-        
-                Write-Verbose ("creating: displayName: " + $displayname + ", description: " + $description + ", key: " + $key + ", value: " + $value )
-
-                postObject -url "/clientproperties" -target $body
-
+    process {
+        if ($PSCmdlet.ShouldProcess($Key)) {
+            $Body           = @{
+                displayName = $Displayname;
+                description = $Description;
+                key         = $Key;
+                value       = $Value
+            }
+            Write-Verbose -Message "Creating: displayName: $($Displayname), description: $($Description), key: $($Key), value: $($Value)"
+            postObject -Url '/clientproperties' -Target $Body
         }
     }
-
-
 }
 
-function set-XMClientProperty {
+function Set-XMClientProperty {
 <#
 .SYNOPSIS
-edit a client property. 
+Edit a client property. 
 
 .DESCRIPTION
-edit a client property. Specify the key. All other properties are optional and will unchanged unless otherwise specified. 
+Edit a client property. Specify the key. All other properties are optional and will unchanged unless otherwise specified. 
 
-.PARAMETER displayname
+.PARAMETER Displayname
 Specify name of the property. 
 
-.PARAMETER description
+.PARAMETER Description
 Specify the description of the property.
 
-.PARAMETER key
+.PARAMETER Key
 Specify the key. 
 
-.PARAMETER value
+.PARAMETER Value
 Specify the value of the property. 
 
 .EXAMPLE
-set-xmclientProperty -key "ENABLE_TOUCH_ID_AUTH" -value "false"
-
+Set-XMClientProperty -Key "ENABLE_TOUCH_ID_AUTH" -Value "false"
 #>
-
-  [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName)][string]$displayname = $null,
-        [parameter(ValueFromPipelineByPropertyName)][string]$description = $null,
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string]$key,
-        [parameter(ValueFromPipelineByPropertyName)][string]$value = $null
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$Displayname = $null,
+
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$Description = $null,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string]$Key,
+
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$Value = $null
     )
-
-    Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($key)) {
-        
-                if (!$displayname) {
-                $displayname = (get-XMClientProperty -key $key).displayName
-                }
-
-                if (!$description) {
-                $description = (get-XMClientProperty -key $key).description
-                }
-
-                if (!$value) {
-                $value = (get-XMClientProperty -key $key).value
-                }
-         
-                $body = @{
-                    displayName = $displayname;
-                    description = $description;
-                    value = $value
-                }
-        
-                Write-Verbose ("changing: displayName: " + $displayname + ", description: " + $description + ", key: " + $key + ", value: " + $value )
-
-                putObject -url ("/clientproperties/" + $key) -target $body
+    process {
+        if ($PSCmdlet.ShouldProcess($Key)) {
+            if (!$Displayname) {
+                $Displayname = (Get-XMClientProperty -Key $Key).displayName
+            }
+            if (!$Description) {
+                $Description = (Get-XMClientProperty -Key $Key).description
+            }
+            if (!$Value) {
+                $Value = (Get-XMClientProperty -Key $Key).value
+            }
+            $Body = @{
+                displayName = $Displayname;
+                description = $Description;
+                value       = $Value
+            }
+            Write-Verbose -Message "Changing: displayName: $($Displayname), description: $($Description), key: $($Key), value: $($Value)"
+            putObject -Url "/clientproperties/$($Key)" -Target $Body
         }
-
     }
-
-
 }
 
-function remove-XMClientProperty {
+function Remove-XMClientProperty {
 <#
 .SYNOPSIS
 Removes a client property. 
@@ -1770,69 +1607,55 @@ Removes a client property.
 .DESCRIPTION
 Removes a client property. This command accepts pipeline input.  
 
-.PARAMETER key
+.PARAMETER Key
 Specify the key of the propery to remove. This parameter is mandatory. 
 
 .EXAMPLE
-remove-xmclientproperty -key "TEST_PROPERTY"
-
-
+Remove-XMClientProperty -Key "TEST_PROPERTY"
 #>
-
-[CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="High")]
-
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
     param(
-        [parameter(ValueFromPipelineByPropertyName,mandatory)][string[]]$key
-            
+        [Parameter(ValueFromPipelineByPropertyName, 
+            mandatory)]
+        [string[]]$Key
     )
-
-   Begin {
-         #check session state
-         checkSession
+    begin {
+        #check session state
+        checkSession
     }
-
-    Process {
-
-        if ($PSCmdlet.ShouldProcess($key)) {
-    
-            Write-Verbose ("Deleting: " + $key)
-
-            deleteObject -url ("/clientproperties/" + $key) -target $null
+    process {
+        if ($PSCmdlet.ShouldProcess($Key)) {
+            Write-Verbose -Message "Deleting: $($Key)"
+            Remove-XMObject -Url "/clientproperties/$($Key)" -Target $null
         }
-
     }
-
-
 }
 
 
-Export-ModuleMember -Function get-XMClientProperty
-Export-ModuleMember -Function get-XMDevice
-Export-ModuleMember -Function get-XMDeviceActions
-Export-ModuleMember -Function get-XMDeviceApps
-Export-ModuleMember -Function get-XMDeviceDeliveryGroups
-Export-ModuleMember -Function get-XMDeviceInfo
-Export-ModuleMember -Function get-XMDeviceManagedApps
-Export-ModuleMember -Function get-XMDevicePolicy
-Export-ModuleMember -Function get-XMDeviceProperty
-Export-ModuleMember -Function get-XMDeviceSoftwareInventory
-Export-ModuleMember -Function get-XMEnrollment
-Export-ModuleMember -Function get-XMServerProperty
+Export-ModuleMember -Function Get-XMClientProperty
+Export-ModuleMember -Function Get-XMDevice
+Export-ModuleMember -Function Get-XMDeviceActions
+Export-ModuleMember -Function Get-XMDeviceApps
+Export-ModuleMember -Function Get-XMDeviceDeliveryGroups
+Export-ModuleMember -Function Get-XMDeviceInfo
+Export-ModuleMember -Function Get-XMDeviceManagedApps
+Export-ModuleMember -Function Get-XMDevicePolicy
+Export-ModuleMember -Function Get-XMDeviceProperty
+Export-ModuleMember -Function Get-XMDeviceSoftwareInventory
+Export-ModuleMember -Function Get-XMEnrollment
+Export-ModuleMember -Function Get-XMServerProperty
 Export-ModuleMember -Function Invoke-XMDeviceSelectiveWipe
 Export-ModuleMember -Function Invoke-XMDeviceWipe
-Export-ModuleMember -Function new-XMClientProperty
-Export-ModuleMember -Function new-XMEnrollment
-Export-ModuleMember -Function new-XMserverproperty
-Export-ModuleMember -Function new-XMSession
-Export-ModuleMember -Function remove-XMClientProperty
-Export-ModuleMember -Function remove-XMDevice
-Export-ModuleMember -Function remove-XMDeviceProperty
-Export-ModuleMember -Function remove-XMServerProperty
-Export-ModuleMember -Function set-XMClientProperty
-Export-ModuleMember -Function set-XMDeviceProperty
-Export-ModuleMember -Function set-XMServerProperty
+Export-ModuleMember -Function New-XMClientProperty
+Export-ModuleMember -Function New-XMEnrollment
+Export-ModuleMember -Function New-XMserverproperty
+Export-ModuleMember -Function New-XMSession
+Export-ModuleMember -Function Remove-XMClientProperty
+Export-ModuleMember -Function Remove-XMDevice
+Export-ModuleMember -Function Remove-XMDeviceProperty
+Export-ModuleMember -Function Remove-XMServerProperty
+Export-ModuleMember -Function Set-XMClientProperty
+Export-ModuleMember -Function Set-XMDeviceProperty
+Export-ModuleMember -Function Set-XMServerProperty
 Export-ModuleMember -Function Update-XMDevice
-
-
-
-
