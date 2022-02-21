@@ -6,6 +6,8 @@
 # Revision 1.2.0 2016.11.25: added the use of a PScredential object with the new-xmsession command.   
 # Revision 1.2.1 2022-02-20: Code beautification and consistency.
 # Revision 1.2.2 2022-02-21: Modified New-XMSession with static timeout parameters. This is a quick fix/workaround for making it work when the account used is RBAC limited, and not able to read server properties.
+# Revision 1.2.3 2022-02-21: Added Revoke-XMEnrollment, Remove-XMEnrollment, Switch-XMDeviceAppLock, Get-XMApp
+
 
 
 # The request object is used by many of the functions. Do not delete.  
@@ -648,6 +650,78 @@ This will read a CSV file and create an enrolment for each of the entries.
     }
 }
 
+function Revoke-XMEnrollment {
+<#
+.SYNOPSIS
+Revoke Enrollment Token
+
+.DESCRIPTION
+NEEDS TEXT
+
+.PARAMETER Token
+NEEDS TEXT
+
+.EXAMPLE
+NEEDS TEXT
+
+.EXAMPLE
+NEEDS TEXT
+
+#>
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
+    param(
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            ValueFromPipeLine, 
+            Mandatory = $true)]
+        [string[]]$Token
+    )
+    begin {
+        #check session state
+        checkSession
+    }
+    process {
+        $Body = "[`"$($Token -join '","')`"]"
+        postObject -Entity '/enrollment/revoke' -Target $Body -ErrorAction Stop
+    }
+}
+
+function Remove-XMEnrollment {
+<#
+.SYNOPSIS
+Remove Enrollment Token
+
+.DESCRIPTION
+NEEDS TEXT
+
+.PARAMETER Token
+NEEDS TEXT
+
+.EXAMPLE
+NEEDS TEXT
+
+.EXAMPLE
+NEEDS TEXT
+
+#>
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
+    param(
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            ValueFromPipeLine, 
+            Mandatory = $true)]
+        [string[]]$Token
+    )
+    begin {
+        #check session state
+        checkSession
+    }
+    process {
+        $Body = "[`"$($Token -join '","')`"]"
+        Remove-XMObject -Entity '/enrollment/revoke' -Target $Body -ErrorAction Stop
+    }
+}
+
 function Get-XMEnrollment {
 <#
 .SYNOPSIS
@@ -1276,6 +1350,155 @@ Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
             Write-Verbose -Message "Property id for property: $($Name) is $($Property.id)"
             Remove-XMObject -Entity "/device/property/$($Property.id)" -Target $null
         }
+    }
+}
+
+function Switch-XMDeviceAppLock {
+<#
+.SYNOPSIS
+Sends app lock/unlock command.
+
+.DESCRIPTION
+The appLock api is a toggle api. Subsequent requests lock/unlock in a toggle fashion.
+
+.PARAMETER Id
+This parameter specifies the id of the device(s) to switch/toggle the App Lock for.
+
+.EXAMPLE
+Switch-XMDeviceAppLock -Id "8"
+
+.EXAMPLE
+Switch-XMDeviceAppLock -Id "8", "11"
+
+#>
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
+    param(
+        [Parameter(ValueFromPipelineByPropertyName, 
+            Mandatory = $true)]
+        [int[]]$Id
+    )
+    begin {
+        #check session state
+        checkSession
+    }
+    process {
+        if ($PSCmdlet.ShouldProcess($Id)) {
+            postObject -Entity '/device/appLock' -Target $Id
+        }
+    }
+}
+
+# Application functions.
+function Get-XMApp {
+<#
+.SYNOPSIS
+Get Applications by Filter
+
+.DESCRIPTION
+NEEDS TEXT
+
+.PARAMETER Search
+NEEDS TEXT
+
+.PARAMETER FilterByType
+NEEDS TEXT
+
+.PARAMETER FilterByPlatform
+NEEDS TEXT
+
+.PARAMETER Start
+NEEDS TEXT
+
+.PARAMETER Limit
+NEEDS TEXT
+
+.PARAMETER Sort
+NEEDS TEXT
+
+.PARAMETER EnableCount
+NEEDS TEXT
+
+.EXAMPLE
+NEEDS TEXT
+
+.EXAMPLE
+NEEDS TEXT
+
+#>
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
+    param(
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            ValueFromPipeLine)]
+        [string]$Search,
+
+        [Parameter(ValueFromPipeLine)]
+        [ValidateSet('mdx', 
+            'enterprise', 
+            'store', 
+            'weblink', 
+            'saas', 
+            'all')]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string]$FilterByType = 'all',
+
+        [Parameter(ValueFromPipeLine)]
+        [ValidateSet('iOS', 
+            'Android', 
+            'AndroidKNOX', 
+            'WinPhone', 
+            'Windows8', 
+            'WindowsCE', 
+            'All')]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string]$FilterByPlatform = 'All',
+
+        [Parameter()]
+        [int]$Start = 0,
+
+        [Parameter()]
+        [int]$Limit = 10,
+
+        [Parameter()]
+        [ValidateSet('ASC', 
+            'DESC')]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string]$Sort = 'ASC',
+
+        [Parameter()]
+        [switch]$EnableCount
+    )
+    begin {
+        checkSession
+        $Body = @{
+            enableCount = $EnableCount.ToString()
+            start = $Start
+            limit = $Limit
+        }
+    }
+    process {
+        if ($Search) {
+            $Body.Add('search', $Search)
+        }
+        $Filter = @()
+        if ($FilterbyType -and $FilterByType -ne 'All') {
+            $Filter += "[application.type.$($FilterByType.ToLower())]"
+        }
+        if ($FilterByPlatform -and $FilterByPlatform -ne 'All') {
+            $Filter += "[application.platform.$($FilterByPlatform.ToLower())]"
+        }
+        if ($Filter.Length -gt 0) {
+            $Body.Add('filterIds', $($Filter -join ','))
+        }
+        $Response = postObject -Entity '/application/filter' -Target $Body
+        return $Response.applicationListData.appList
     }
 }
 
