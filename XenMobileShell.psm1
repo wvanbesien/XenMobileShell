@@ -1,5 +1,5 @@
 ﻿#
-# Version: 1.2.2
+# Version: 1.2.3
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
 # Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name.
 # Revision 1.1.4 2016.11.24: corrected example in new-xmenrollment
@@ -157,7 +157,7 @@ function putObject {
 function getObject {
     #function used to submit GET type requests to the server. 
     param(
-        [Parameter(mandatory)]
+        [Parameter(Mandatory = $true)]
         $Entity
     )
     process {
@@ -1390,7 +1390,7 @@ Switch-XMDeviceAppLock -Id "8", "11"
 }
 
 # Application functions.
-function Get-XMApp {
+function Get-XMApp { #TODO
 <#
 .SYNOPSIS
 Get Applications by Filter
@@ -1499,6 +1499,228 @@ NEEDS TEXT
         }
         $Response = postObject -Entity '/application/filter' -Target $Body
         return $Response.applicationListData.appList
+    }
+}
+
+function Get-XMAppDetails { #TODO
+<#
+.SYNOPSIS
+NEEDS TEXT
+
+.DESCRIPTION
+NEEDS TEXT
+
+.PARAMETER Id
+NEEDS TEXT
+
+.PARAMETER Platform
+NEEDS TEXT
+
+.EXAMPLE
+NEEDS TEXT
+{
+    "status": 0,
+    "message": "Success",
+    "container": {
+        "id": 4,
+        "name": "Microsoft Word",
+        "description": "app description",
+        "createdOn": null,
+        "lastUpdated": null,
+        "disabled": false,
+        "nbSuccess": 0,
+        "nbFailure": 0,
+        "nbPending": 0,
+        "schedule": {
+            "enableDeployment": true,
+            "deploySchedule": "LATER",
+            "deployScheduleCondition": "EVERYTIME",
+            "deployDate": "3/14/2018",
+            "deployTime": "17:44",
+            "deployInBackground": false
+        },
+        "permitAsRequired": true,
+        "iconData": "/9j/4AAQSkZJRgABAQEA...",
+        "appType": "App Store App",
+        "categories": [ "Default" ],
+        "roles": [ "AllUsers" ],
+        "workflow": null,
+        "vppAccount": null,
+        "iphone": {
+            "name": "MobileApp6",
+            "displayName": "Microsoft Office Word",
+            "description": "Microsoft Office Word app from app store",
+            "paid": false,
+            "removeWithMdm": true,
+            "preventBackup": true,
+            "changeManagementState": true,
+            "associateToDevice": false,
+            "canAssociateToDevice": false,
+            "canDissociateVPP": true,
+            "appVersion": "2.3",
+            "store": {
+                "rating": {
+                    "rating": 0,
+                    "reviewerCount": 0
+                },
+                "screenshots": [],
+                "faqs": [ {
+                    "question": "Question?",
+                    "answer": "Answer",
+                    "displayOrder": 1 
+                } ],
+                "storeSettings": {
+                    "rate": false,
+                    "review": false
+                }
+            },
+            "avppParams": null,
+            "avppTokenParams": null,
+            "rules": null,
+            "appType": "mobile_ios",
+            "uuid": "8b0f08d0-52ef-453f-8d99-d4c1a3e973d7",
+            "id": 9,
+            "vppAccount": -1,
+            "iconPath": "/9j/4AAQSkZJRgABAQE..",
+            "iconUrl": "http://is3.mzstatic.com/image/thumb/Purple127/v4/e1/35/d2/e135d280-67cf-7f63-ca16-3c5f970a1d70/source/60x60bb.jpg",
+            "bundleId": "com.microsoft.Office.Word",
+            "appId": "586447913",
+            "appKey": null,
+            "storeUrl": "https://itunes.apple.com/us/app/microsoft-word/id586447913?mt=8&uo=4",
+            "b2B": false
+        },
+        "ipad": null,
+        "android": {
+            "name": "MobileApp5",
+            "displayName": "Microsoft Office Word","description": "Microsoft Word", "paid": false, "removeWithMdm": true, "preventBackup": true, "changeManagementState": false, "associateToDevice": false, "canAssociateToDevice": false, "canDissociateVPP": true, "appVersion": "16.0.8326.2034", "store": { "rating": { "rating": 0, "reviewerCount": 0 }, "screenshots": [], "faqs": [],
+    "storeSettings": { "rate": true, "review": true } }, "avppParams": null, "avppTokenParams": null, "rules": null, "appType": "mobile_android", "uuid": "40c514dd-1a8a-4e48-96ed-512b658fb333", "id": 8, "vppAccount": -1, "iconPath": "iVBORw0KGgoAAAANSU...", "iconUrl": "https://lh3.ggpht.com/j6aNgkpGRXp9PEinADFoSkyfup46-6Rb83bS41lfQC_Tc2qg96zQ_aqZcyiaV3M-Ai4", "bundleId": "com.microsoft.office.word", "appId": null, "appKey": null, "storeUrl": "https://play.google.com/store/apps/details?id=com.microsoft.office.word", "b2B": false }, "windows": null, "android_work": null, "windows_phone": null }
+}
+#>
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
+    param(
+        [ValidateSet('mdx', 
+            'enterprise', 
+            'store', 
+            'weblink', 
+            'saas')]
+        [string]$Type,
+
+        [Parameter(ValueFromPipeLineByPropertyName, 
+            ValueFromPipeLine)]
+        [int]$Id,
+
+        [string]$Connector
+    )
+    begin {
+        checkSession
+        $Method = 'GET'
+    }
+    process {
+        switch ($Type.ToLower()) {
+            'mdx' {
+                $Entity = "/application/mobile/$($Id)"
+                break
+            }
+            'enterprise' {
+                $Entity = "/application/mobile/$($Id)"
+                break
+            }
+            'weblink' {
+                $Entity = "/application/weblink/$($Id)"
+                break
+            }
+            'saas' {
+                if ($Connector) {
+                    $Entity = "/application/saas/connector/$($Connector)"
+                }
+                else {
+                    $Entity = "/application/saas/$($Id)"
+                }
+                break
+            }
+            'store' {
+                $Entity = "/application/store/$($Id)"
+                break
+            }
+        }
+        $Uri = "$($XMSBaseUri)$($Entity)"
+        Write-Verbose -Message "Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers"
+        $Response = Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers
+        return $Response.container
+    }
+}
+
+function Update-XMPublicStoreApp { #TODO
+<#
+.SYNOPSIS
+
+
+.DESCRIPTION
+
+
+.PARAMETER Id
+
+
+.PARAMETER Platform
+
+
+.EXAMPLE
+
+{
+    "removeWithMdm": false,
+    "preventBackup": false,
+    "changeManagementState": false,
+    "displayName": "Microsoft Word - App Store",
+    "description": "description",
+    "faqs": [ {
+        "question": "Question?",
+        "answer": "Answer"
+    } ],
+    "storeSettings": {
+        "rate": false,
+        "review": false
+    },
+    "checkForUpdate": true
+}
+
+Valid plaforms are: iphone, ipad, android, android_work, windows, windows_phone.
+#>
+    [CmdletBinding(SupportsShouldProcess = $true, 
+        ConfirmImpact = 'High')]
+    param(
+        [Parameter(ValueFromPipelineByPropertyName, 
+            Mandatory = $true)]
+        [string]$Id,
+
+        [Parameter(ValueFromPipelineByPropertyName, 
+            Mandatory = $true)]
+        [ValidateSet('iphone', 
+            'ipad', 
+            'android', 
+            'android_work', 
+            'windows', 
+            'windows_phone')]
+        [string]$Platform,
+
+        [switch]$CheckForUpdate
+    )
+    begin {
+        Get-XMSession
+        $Method = 'PUT'
+    }
+    process {
+        $Entity = "/application/store/$($Id)/platform/$($Platform)"
+        $Uri = "$($XMSBaseUri)$($Entity)"
+        if ($PSCmdlet.ShouldProcess($Id)) {
+            $Payload = @{
+                checkForUpdate = $CheckForUpdate.ToString()
+            }
+            $JSON = $Payload | ConvertTo-Json
+            Write-Verbose -Message "Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers -Body $JSON"
+            $Response = Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers -Body $JSON
+            return $Response.container
+        }
     }
 }
 
@@ -1930,6 +2152,7 @@ Remove-XMClientProperty -Key "TEST_PROPERTY"
     }
 }
 
+Export-ModuleMember -Function Get-XMApp
 Export-ModuleMember -Function Get-XMClientProperty
 Export-ModuleMember -Function Get-XMDevice
 Export-ModuleMember -Function Get-XMDeviceActions
@@ -1951,8 +2174,11 @@ Export-ModuleMember -Function New-XMSession
 Export-ModuleMember -Function Remove-XMClientProperty
 Export-ModuleMember -Function Remove-XMDevice
 Export-ModuleMember -Function Remove-XMDeviceProperty
+Export-ModuleMember -Function Remove-XMEnrollment
 Export-ModuleMember -Function Remove-XMServerProperty
+Export-ModuleMember -Function Revoke-XMEnrollment
 Export-ModuleMember -Function Set-XMClientProperty
 Export-ModuleMember -Function Set-XMDeviceProperty
 Export-ModuleMember -Function Set-XMServerProperty
+Export-ModuleMember -Function Switch-XMDeviceAppLock
 Export-ModuleMember -Function Update-XMDevice
