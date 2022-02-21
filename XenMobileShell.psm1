@@ -1,13 +1,14 @@
 ﻿#
-# Version: 1.2.1
+# Version: 1.2.2
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
 # Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name.
 # Revision 1.1.4 2016.11.24: corrected example in new-xmenrollment
 # Revision 1.2.0 2016.11.25: added the use of a PScredential object with the new-xmsession command.   
 # Revision 1.2.1 2022-02-20: Code beautification and consistency.
+# Revision 1.2.2 2022-02-21: Modified New-XMSession with static timeout parameters. This is a quick fix/workaround for making it work when the account used is RBAC limited, and not able to read server properties.
 
 
-#the request object is used by many of the functions. Do not delete.  
+# The request object is used by many of the functions. Do not delete.  
 $Request = [PSCustomObject]@{
     Method = $null
     Entity = $null
@@ -17,14 +18,7 @@ $Request = [PSCustomObject]@{
 }
 
 
-#supporting functions. These functions are called by other functions in the module.
-
-#$XMSServerProtocol = 'https://'
-#$XMSServerHost = 'mdm.citrix.com'
-#$XMSServerPort = 4443
-#$XMSServerApiPath = '/xenmobile/api/v1'
-
-#function submitToServer {
+# Supporting functions. These functions are called by other functions in the module.
 function Invoke-XMRequest {
     param(
         [Parameter(mandatory)]
@@ -168,11 +162,11 @@ function getObject {
         $Request.Method = 'GET'
         $Request.Entity = $Entity
         $Request.Url    = "$($XMSServerApiUrl)$($Entity)"
-        $Request.header = @{
+        $Request.Header = @{
             'auth_token'   = $XMSAuthToken;
             'Content-Type' = 'application/json'
         }
-        $Request.body   = $null
+        $Request.Body   = $null
     }
     end {
         return Invoke-XMRequest -Request $Request
@@ -196,8 +190,7 @@ function checkSession {
     }
 }
 
-#main functions. 
-
+# Main functions. 
 function New-XMSession {
 <#
 .SYNOPSIS
@@ -225,6 +218,14 @@ Therefore, the servername must match the certificate, be valid and trusted by sy
 
 .PARAMETER -Port
 You can specify an alternative port to connect to the server. This is optional and will default to 4443 if not specified.
+
+.PARAMETER -TimeoutType
+If specified, this value, along with the -Timeout value, is used instead of querying the server for the values. This is useful if access to server properties is restricted using RBAC.
+Must be set to the same value as the Server Property "xms.publicapi.timeout.type". Can be "STATIC_TIMEOUT" or "INACTIVITY_TIMEOUT".
+
+.PARAMETER -Timeout
+If specified, this value, along with the -TimeoutType value, is used instead of querying the server for the values. This is useful if access to server properties is restricted using RBAC.
+Must be set to the same value as the Server Property associated with the timeout type; ie. "xms.publicapi.static.timeout" if STATIC_TIMEOUT and "xms.publicapi.inactivity.timeout" if INACTIVITY_TIMEOUT. 
 
 .EXAMPLE
 New-XMSession -User "admin" -Password "password" -Server "mdm.citrix.com"
@@ -255,11 +256,21 @@ New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
         $Credential = $null,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-        ValueFromPipeLine)]
+            ValueFromPipeLine)]
         [string]$Server,
 
         [Parameter(ValueFromPipeLIneByPropertyName)]
-        [string]$Port = '4443'
+        [string]$Port = '4443',
+
+        [Parameter(ParameterSetName = 'Timeout', 
+            Mandatory = $false)]
+        [ValidateSet('STATIC_TIMEOUT',
+            'INACTIVITY_TIMEOUT')]
+        [string]$TimeoutType,
+
+        [Parameter(ParameterSetName = 'Timeout', 
+            Mandatory = $true)]
+        [int]$Timeout
     )
     process {
         Set-Variable -Name 'XMSServer' -Value $Server -Scope global
@@ -296,30 +307,53 @@ New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
         Write-Verbose -Message "Setting session start to: $($XMSessionStart)"
         #check if the timeout type is set to inactivity or static and set the global value accordingly. 
         #if a static timeout is used, the session expiry can be set based on the static timeout. 
-        Write-Verbose -Message 'Checking the type of timeout the server uses:'
-        if ((Get-XMServerProperty -Name 'xms.publicapi.timeout.type' -SkipCheck $true).Value -eq 'INACTIVITY_TIMEOUT') {
-            Write-Verbose -Message 'Server is using an inactivity timeout for the API session. This is preferred.'
-            Set-Variable -Name 'XMSessionUseInactivity' -Value $true -Scope global
-            Set-Variable -Name 'XMSessionInactivityTimer' -Value ([System.Convert]::ToInt32((Get-XMServerProperty -Name 'xms.publicapi.inactivity.timeout' -SkipCheck $true).Value)) -Scope global
-            #due to network conditions and other issues, the actual timeout of the server may be quicker than here. So, we will reduce the timeout by 30 seconds.
-            $TimeToExpiry = (($XMSessionInactivityTimer) * 60) - 30 
-            Set-Variable -Name 'XMSessionExpiry' -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope global
-            Write-Verbose -Message "The session expiry time is set to: $($XMSessionExpiry)"
+        if (!$TimeoutType) {
+            Write-Verbose -Message "TimeoutType isn't defined. Will attempt to read timeout from server properties."
+            Write-Verbose -Message 'Checking the type of timeout the server uses:'
+            if ((Get-XMServerProperty -Name 'xms.publicapi.timeout.type' -SkipCheck $true).Value -eq 'INACTIVITY_TIMEOUT') {
+                Write-Verbose -Message 'Server is using an inactivity timeout for the API session. This is preferred.'
+                Set-Variable -Name 'XMSessionUseInactivity' -Value $true -Scope global
+                Set-Variable -Name 'XMSessionInactivityTimer' -Value ([System.Convert]::ToInt32((Get-XMServerProperty -Name 'xms.publicapi.inactivity.timeout' -SkipCheck $true).Value)) -Scope global
+                #due to network conditions and other issues, the actual timeout of the server may be quicker than here. So, we will reduce the timeout by 30 seconds.
+                $TimeToExpiry = (($XMSessionInactivityTimer) * 60) - 30 
+                Set-Variable -Name 'XMSessionExpiry' -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope global
+                Write-Verbose -Message "The session expiry time is set to: $($XMSessionExpiry)"
+            }
+            else {
+                Write-Verbose 'Server is using a static timeout. The use of an inactivity timeout is recommended.'
+                Set-Variable -Name 'XMSessionUseInactivity' -Value $false -Scope global
+                #get the static timeout and deduct 30 seconds. 
+                $TimeToExpiry = ([System.Convert]::ToInt32((Get-XMServerProperty -Name 'xms.publicapi.static.timeout' -SkipCheck $true).Value)) * 60 - 30
+                Write-Verbose -Message "Expiry in seconds: $($TimeToExpiry)"
+                Set-Variable -Name 'XMSessionExpiry' -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope global
+                Write-Verbose -Message "The session expiry time is set to: $($XMSessionExpiry)"
+            }
         }
         else {
-            Write-Verbose 'Server is using a static timeout. The use of an inactivity timeout is recommended.'
-            Set-Variable -Name 'XMSessionUseInactivity' -Value $false -Scope global
-            #get the static timeout and deduct 30 seconds. 
-            $TimeToExpiry = ([System.Convert]::ToInt32((Get-XMServerProperty -Name 'xms.publicapi.static.timeout' -SkipCheck $true).Value)) * 60 - 30
-            Write-Verbose -Message "Expiry in seconds: $($TimeToExpiry)"
-            Set-Variable -Name 'XMSessionExpiry' -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope global
-            Write-Verbose -Message "The session expiry time is set to: $($XMSessionExpiry)"
+            Write-Verbose -Message "TimeoutType is defined: $($TimeoutType)"
+            If ($TimeoutType -eq "INACTIVITY_TIMEOUT") {
+                Write-Verbose "   Server is using an inactivity timeout for the API session. This is preferred."
+                Set-Variable -Name "XMSessionUseInactivity" -Value $true -Scope Global
+                Set-Variable -Name "XMSessionInactivityTimer" -Value $Timeout -Scope Global
+                #due to network conditions and other issues, the actual timeout of the server may be quicker than here. So, we will reduce the timeout by 30 seconds.
+                $TimeToExpiry = (($XMSessionInactivityTimer) * 60) - 30
+                Set-Variable -Name "XMSessionExpiry" -Value (get-Date).AddSeconds($TimeToExpiry) -Scope Global
+                Write-verbose "The session expiry time is set to: $($XMSessionExpiry)"
+            }
+            Else {
+                Write-Verbose "   Server is using a static timeout. The use of an inactivity timeout is recommended."
+                Set-Variable -Name "XMSessionUseInactivity" -Value $false -Scope Global
+                #get the static timeout and deduct 30 seconds. 
+                $TimeToExpiry = $Timeout * 60 - 30
+                Write-Verbose "Expiry in seconds: $($TimeToExpiry)"
+                Set-Variable -Name "XMSessionExpiry" -Value (Get-Date).AddSeconds($TimeToExpiry) -Scope Global
+                Write-Verbose "The session expiry time is set to: $($XMSessionExpiry)"
+            }
         }
         Write-Verbose -Message 'A session has been started.'
         Write-Host "Authentication successfull. Token: $($XMSAuthToken)`nSession will expire at: $($XMSessionExpiry)" -ForegroundColor Yellow
     }
 }
-
 
 function Get-XMAuthToken {
 <#
@@ -404,7 +438,6 @@ $Token = Get-XMAuthToken -Api "https://mdm.citrix.com:4443/xenmobile/api/v1" -Cr
 }
 
 # Enrollment functions
-
 function New-XMEnrollment {
 <#
 .SYNOPSIS
@@ -677,8 +710,7 @@ Get-XMEnrollment -Filter "[enrollment.invitationStatus.expired]"
     }
 }
 
-# fuctions to manage devices. 
-
+# Devices functions.
 function Get-XMDevice {
 <#
 .SYNOPSIS
@@ -767,7 +799,7 @@ Get-XMDevice -User "ward@citrix.com | ForEach-Object { Remove-XMDevice -Id $PSIt
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipeLineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string[]]$Id
     )
     begin {
@@ -802,7 +834,7 @@ Get-XMDevice -User "aford@corp.vanbesien.com" | Update-XMDevice
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory = $true)]
+            Mandatory = $true)]
         [int[]]$Id
     )
     begin {
@@ -837,7 +869,7 @@ Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceWipe
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory = $true)]
+            Mandatory = $true)]
         [int[]]$Id
     )
     begin {
@@ -870,10 +902,10 @@ Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceSelectiveWipe
 
 #>
     [CmdletBinding(SupportsShouldProcess = $true, 
-        ConfirmImpact='High')]
+        ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory = $true)]
+            Mandatory = $true)]
         [int[]]$Id
     )
     begin {
@@ -906,7 +938,7 @@ Get-XMDeviceDeliveryGroups -Id "8"
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -938,7 +970,7 @@ Get-XMDeviceActions -Id "8"
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -972,7 +1004,7 @@ Get-XMDeviceApps -Id "8"
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -1005,7 +1037,7 @@ Get-XMDeviceManagedApps -Id "8"
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -1036,7 +1068,7 @@ Get-XMDeviceSoftwareInventory -Id "8"
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -1068,7 +1100,7 @@ Get-XMDeviceInfo -Id "8"
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -1099,7 +1131,7 @@ Get-XMDevicePolicy -Id "8"
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -1133,7 +1165,7 @@ Get-XMDevice -Name "Ward@citrix.com" | Get-XMDeviceProperties
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id
     )
     begin {
@@ -1174,15 +1206,15 @@ Set-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED" -Value "1"
         ConfirmImpact='High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Name,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Value
     )
     begin {
@@ -1223,21 +1255,21 @@ Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Id,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Name
     )
     begin {
-        #check session state
+        # Check session state
         checkSession
     }
     process {
         if ($PSCmdlet.ShouldProcess($Id)) {
-            #the property is deleted based on the id of the property which is unique. 
-            #thus, we first look for the property
+            #The property is deleted based on the id of the property which is unique. 
+            #Thus, we first look for the property
             $Property = Get-XMDeviceProperty -Id $Id | Where-Object {
                 $PSItem.name -eq $Name
             }
@@ -1247,8 +1279,7 @@ Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
     }
 }
 
-#functions to manage server properties. 
-
+# ServerProperty functions.
 function Get-XMServerProperty {
 <#
 .SYNOPSIS
@@ -1276,12 +1307,12 @@ Get-XMServerProperty -Name "xms.publicapi.static.timeout"
         [bool]$SkipCheck = $false
     )
     begin {
-        #The get-xmserverproperty function is called during the xmsession setup in order to specify the timeout values.
+        #The Get-XMServerProperty function is called during the XMSession setup in order to specify the timeout values.
         #If you check the session during this time, the check will fail.
-        #using the hidden skipcheck parameter, we can override the check during the initial xmsession setup.
+        #Using the hidden skipcheck parameter, we can override the check during the initial xmsession setup.
         if (!$SkipCheck) {
             Write-verbose -Message 'Checking the session state'
-            #check session state.
+            #Check session state.
             checkSession
         }
         else {
@@ -1338,11 +1369,11 @@ Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Name,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Value,
 
         [Parameter(ValueFromPipelineByPropertyName)]
@@ -1356,7 +1387,7 @@ Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
         checkSession
     }
     process {
-        if ($PSCmdlet.ShouldProcess($name)) {
+        if ($PSCmdlet.ShouldProcess($Name)) {
             #if no displayname or description is provided, search for the existing values and use those. 
             if (!$DisplayName) {
                 $DisplayName = (Get-XMServerProperty -Name $Name).displayName
@@ -1364,13 +1395,13 @@ Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
             if (!$Description) {
                 $Description = (Get-XMServerProperty -Name $Name).description
             }
-            $Request.method    = 'PUT'
-            $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1/serverproperties" 
-            $Request.header    = @{
+            $Request.Method    = 'PUT'
+            $Request.Url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1/serverproperties" 
+            $Request.Header    = @{
                 'auth_token'   = $XMSAuthToken;
                 'Content-Type' = 'application/json'
             }
-            $Request.body      = @{
+            $Request.Body      = @{
                 name           = $Name;
                 value          = $Value;
                 displayName    = $DisplayName;
@@ -1409,19 +1440,19 @@ New-XMServerProperty -Name "xms.something.something" -Value "indeed" -DisplayNam
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Name,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Value,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$DisplayName,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Description
     )
     begin {
@@ -1430,13 +1461,13 @@ New-XMServerProperty -Name "xms.something.something" -Value "indeed" -DisplayNam
     }
     process {
         if ($PSCmdlet.ShouldProcess($Name)) {
-            $Request.method    = 'POST'
-            $Request.url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1/serverproperties" 
-            $Request.header    = @{
+            $Request.Method    = 'POST'
+            $Request.Url       = "https://$($XMSServer):$($XMSServerPort)/xenmobile/api/v1/serverproperties" 
+            $Request.Header    = @{
                 'auth_token'   = $XMSAuthToken;
                 'Content-Type' = 'application/json'
             }
-            $Request.body      = @{
+            $Request.Body      = @{
                 name           = $Name;
                 value          = $Value;
                 displayName    = $DisplayName;
@@ -1466,7 +1497,7 @@ Remove-XMServerProperty -Name "xms.something.something"
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string[]]$Name
     )
     begin {
@@ -1481,8 +1512,7 @@ Remove-XMServerProperty -Name "xms.something.something"
     }
 }
 
-#functions to manage client properties. (Client is WorxHome / Secure Hub)
-
+# ClientProperty functions.
 function Get-XMClientProperty {
 <#
 .SYNOPSIS
@@ -1544,19 +1574,19 @@ New-XMClientProperty -Displayname "Enable touch ID" -Description "Enables touch 
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Displayname,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Description,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Key,
 
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string]$Value
     )
     begin {
@@ -1662,7 +1692,7 @@ Remove-XMClientProperty -Key "TEST_PROPERTY"
         ConfirmImpact = 'High')]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
-            mandatory)]
+            Mandatory = $true)]
         [string[]]$Key
     )
     begin {
