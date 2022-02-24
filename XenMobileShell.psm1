@@ -192,7 +192,172 @@ function checkSession {
     }
 }
 
-# Main functions. 
+# Main functions.
+function New-XMCredential { #TODO
+    <#
+    .SYNOPSIS
+    Create a PSCredential for XenMobile login
+
+    .DESCRIPTION
+    Long description
+
+    .EXAMPLE
+    An example
+
+    .NOTES
+    General notes
+    #>
+    [CmdletBinding()]
+    param (
+        # Parameter help description
+        [Parameter()]
+        [string]
+        $Username = "$($env:USERNAME)@citrix.com",
+
+        # Parameter help description
+        [Parameter()]
+        [string]
+        $Path = 'HKCU:\Software\XenMobileShell'
+    )
+	[pscredential]$Credential = Get-Credential -Message 'Credential' -UserName $Username
+    if (!(Test-Path -Path $Path)) {
+        New-Item -Path $(Split-Path -Path $Path -Parent) -Name $(Split-Path -Path $Path -Leaf) -Force
+    }
+	$Secure = $Credential.Password | ConvertFrom-SecureString
+    switch ($(Get-Item -Path $Path).PSProvider.Name) {
+        'Registry' {
+            Set-ItemProperty -Path $Path -Type String -Name $Username -Value $Secure -Force
+            break
+        }
+        'FileSystem' {
+            $File = Join-Path -Path $Path -ChildPath "$($Username).txt"
+            Set-Content -Path $Path -Value $Secure -Force
+             -Path $Path -Type String -Name $Username -Value $Secure -Force
+            break
+        }
+        Default {
+            throw "Unsupported provider."
+            break
+        }
+    }
+}
+
+function Get-XMCredential {
+    <#
+    .SYNOPSIS
+    Short description
+    
+    .DESCRIPTION
+    Long description
+    
+    .EXAMPLE
+    An example
+    
+    .NOTES
+    General notes
+    #>
+    [CmdletBinding()]
+    param (
+        # Parameter help description
+        [Parameter()]
+        [string]
+        $Username = "$($env:USERNAME)@citrix.com",
+
+        # Parameter help description
+        [Parameter()]
+        [string]
+        $Path = 'HKCU:\Software\XenMobileShell'
+    )
+	$SecurePass = Get-ItemProperty -Path $Regpath -Name $Username | Select-Object -ExpandProperty $Username | ConvertTo-SecureString
+	$Credential = New-Object System.Management.Automation.PsCredential($Username, $SecurePass)
+	$BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
+	$Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+	return $Password
+}
+
+function Export-XMCredential { #TODO
+    <#
+    .SYNOPSIS
+    Short description
+
+    .DESCRIPTION
+    Long description
+
+    .EXAMPLE
+    An example
+
+    .NOTES
+    General notes
+    #>
+	param(
+		[pscredential]$Credential = (Get-Credential),
+		[string]$Path = "credentials.enc.xml"
+	)
+
+	# Look at the object type of the $Credential parameter to determine how to handle it
+	switch ($Credential.GetType().Name) {
+		# It is a credential, so continue
+		PSCredential        { continue }
+		# It is a string, so use that as the username and prompt for the password
+		String                           { $Credential = Get-Credential -Credential $Credential }
+		# In all other caess, throw an error and exit
+		default                          { Throw "You must specify a credential object to export to disk." }
+	}
+
+	# Create temporary object to be serialized to disk
+	$Export = "" | Select-Object Username, EncryptedPassword
+
+	# Give object a type name which can be identified later
+	$Export.PSObject.TypeNames.Insert(0,’ExportedPSCredential’)
+	$Export.Username = $Credential.Username
+
+	# Encrypt SecureString password using Data Protection API
+	# Only the current user account can decrypt this cipher
+	$Export.EncryptedPassword = $Credential.Password | ConvertFrom-SecureString
+
+	# Export using the Export-Clixml cmdlet
+	$Export | Export-Clixml $Path
+	Write-Host -ForegroundColor Green "Credentials saved to: " -NoNewline
+
+	# Return FileInfo object referring to saved credentials
+	Get-Item $Path
+}
+
+function Import-XMCredential { #TODO
+    <#
+    .SYNOPSIS
+    Short description
+
+    .DESCRIPTION
+    Long description
+
+    .EXAMPLE
+    An example
+
+    .NOTES
+    General notes
+    #>
+	param(
+		[string]$Path = "credentials.enc.xml"
+	)
+
+	# Import credential file
+	$Import = Import-Clixml $Path
+
+	# Test for valid import
+	if (!$Import.UserName -or !$Import.EncryptedPassword) {
+		throw "Input is not a valid ExportedPSCredential object, exiting."
+	}
+	$Username = $Import.Username
+
+	# Decrypt the password and store as a SecureString object for safekeeping
+	$SecurePass = $Import.EncryptedPassword | ConvertTo-SecureString
+
+	# Build the new credential object
+	$Credential = New-Object System.Management.Automation.PSCredential $Username, $SecurePass
+	Write-Output $Credential
+}
+
 function New-XMSession {
 <#
 .SYNOPSIS
@@ -784,7 +949,7 @@ Get-XMEnrollment -Filter "[enrollment.invitationStatus.expired]"
     }
 }
 
-# Devices functions.
+# Devices functions
 function Get-XMDevice {
 <#
 .SYNOPSIS
