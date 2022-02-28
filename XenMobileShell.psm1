@@ -21,9 +21,25 @@ $Request = [PSCustomObject]@{
 
 
 # Supporting functions. These functions are called by other functions in the module.
-function Invoke-XMRequest {
+function Invoke-XMRequest { #TODO HELP
+    <#
+    .SYNOPSIS
+    Short description
+    
+    .DESCRIPTION
+    Long description
+    
+    .PARAMETER Request
+    Parameter description
+    
+    .EXAMPLE
+    An example
+    
+    .NOTES
+    General notes
+    #>
     param(
-        [Parameter(mandatory)]
+        [Parameter(Mandatory = $true)]
         $Request
     )
     try {
@@ -38,21 +54,45 @@ function Invoke-XMRequest {
     }
 }
 
-function Search-XMObject {
-    #this function submits a search request to the server and returns the results.
-    #a token is required, server, as well as the url which specifies the API this goes to. 
-    #the url is the portion after https://<server>:4443/xenmobile/api/v1 beginning with slash. 
+function Find-XMObject { #TODO HELP
+    <#
+    .SYNOPSIS
+    Used to submit a search request to the server and return the results.
+    
+    .DESCRIPTION
+    This function submits a search request to the server and returns the results.
+    A token is required, server, as well as the url which specifies the API this goes to. 
+    The url is the portion after https://<server>:4443/xenmobile/api/v1 beginning with slash. 
+    
+    .PARAMETER Criteria
+    Parameter description
+    
+    .PARAMETER Entity
+    Parameter description
+    
+    .PARAMETER FilterIds
+    Parameter description
+    
+    .PARAMETER ResultSetSize
+    Parameter description
+    
+    .EXAMPLE
+    An example
+    
+    .NOTES
+    General notes
+    #>
     param(
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         $Criteria = $null,
 
         [Parameter(Mandatory = $true)]
         $Entity,
 
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         $FilterIds = '[]',
 
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         $ResultSetSize = 999
     )
     process { 
@@ -78,15 +118,34 @@ function Search-XMObject {
     }
 }
 
-function Remove-XMObject {
+function Remove-XMObject { #TODO HELP
     <#
-    This function is used by DELETE type requests. 
+    .SYNOPSIS
+    Used to submit REST DELETE requests.
+
+    .DESCRIPTION
+    Long description
+
+    .PARAMETER Entity
+    Parameter description
+
+    .PARAMETER Target
+    Parameter description
+
+    .EXAMPLE
+    An example
+
+    .NOTES
+    General notes
+
+    .TODO
+
     #>
     param(
         [Parameter(Mandatory = $true)]
         $Entity,
 
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         [string]$Target
     )
     process { 
@@ -104,8 +163,26 @@ function Remove-XMObject {
     }
 }
 
-function postObject {
-    #function used by POST Type requests. 
+function Submit-XMObject { #TODO HELP
+    <#
+    .SYNOPSIS
+    Used to submit REST POST requests.
+    
+    .DESCRIPTION
+    Long description
+    
+    .PARAMETER Entity
+    Parameter description
+    
+    .PARAMETER Target
+    Parameter description
+    
+    .EXAMPLE
+    An example
+    
+    .NOTES
+    General notes
+    #>
     param(
         [Parameter(Mandatory = $true)]
         $Entity,
@@ -129,8 +206,26 @@ function postObject {
     }
 }
 
-function putObject {
-    #function used by PUT Type requests. 
+function Set-XMObject { #TODO HELP
+    <#
+    .SYNOPSIS
+    Used to submit REST PUT requests.
+    
+    .DESCRIPTION
+    Long description
+    
+    .PARAMETER Entity
+    Parameter description
+    
+    .PARAMETER Target
+    Parameter description
+    
+    .EXAMPLE
+    An example
+    
+    .NOTES
+    General notes
+    #>
     param(
         [Parameter(Mandatory = $true)]
         $Entity,
@@ -154,8 +249,23 @@ function putObject {
     }
 }
 
-function getObject {
-    #function used to submit GET type requests to the server. 
+function Get-XMObject { #TODO HELP
+    <#
+    .SYNOPSIS
+    Used to submit REST GET requests.
+    
+    .DESCRIPTION
+    Long description
+    
+    .PARAMETER Entity
+    Parameter description
+    
+    .EXAMPLE
+    An example
+    
+    .NOTES
+    General notes
+    #>
     param(
         [Parameter(Mandatory = $true)]
         $Entity
@@ -175,7 +285,7 @@ function getObject {
     }
 }
 
-function checkSession {
+function checkSession { #TODO RENAME TO FOLLOW PS GUIDELINES
     #this functions checks the state of the session timeout. And will update in case the timeout type is inactivity. 
     if ($XMSessionExpiry -gt (Get-Date)) {
         Write-Verbose -Message "Session is still active."
@@ -210,12 +320,12 @@ function New-XMCredential { #TODO
     [CmdletBinding()]
     param (
         # Parameter help description
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         [string]
         $Username = "$($env:USERNAME)@citrix.com",
 
         # Parameter help description
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         [string]
         $Path = 'HKCU:\Software\XenMobileShell'
     )
@@ -242,7 +352,7 @@ function New-XMCredential { #TODO
     }
 }
 
-function Get-XMCredential {
+function Get-XMCredential { #TODO
     <#
     .SYNOPSIS
     Short description
@@ -259,12 +369,12 @@ function Get-XMCredential {
     [CmdletBinding()]
     param (
         # Parameter help description
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         [string]
         $Username = "$($env:USERNAME)@citrix.com",
 
         # Parameter help description
-        [Parameter()]
+        [Parameter(Mandatory = $false)]
         [string]
         $Path = 'HKCU:\Software\XenMobileShell'
     )
@@ -290,8 +400,13 @@ function Export-XMCredential { #TODO
     General notes
     #>
 	param(
-		[pscredential]$Credential = (Get-Credential),
-		[string]$Path = "credentials.enc.xml"
+        [Parameter(Mandatory = $false)]
+		[pscredential]
+        $Credential = (Get-Credential),
+
+        [Parameter(Mandatory = $false)]
+		[string]
+        $Path = "credentials.enc.xml"
 	)
 
 	# Look at the object type of the $Credential parameter to determine how to handle it
@@ -410,34 +525,45 @@ New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
 #>
     [CmdletBinding()]
     param(
-        [Parameter(ValueFromPipelineByPropertyName, 
-            ValueFromPipeLine)]
-        [string]$User,
+        [Parameter(Mandatory = $false, 
+            ValueFromPipelineByPropertyName = $true, 
+            ValueFromPipeLine = $true)]
+        [string]
+        $User,
 
-        [Parameter(ValueFromPipelineByPropertyName,
-            ValueFromPipeLine)]
-        [string]$Password,
+        [Parameter(Mandatory = $false, 
+            ValueFromPipelineByPropertyName = $true,
+            ValueFromPipeLine = $true)]
+        [string]
+        $Password,
 
-        [Parameter(valueFromPipelineByPropertyName, 
-            ValueFromPipeLine)]
+        [Parameter(Mandatory = $false, 
+            ValueFromPipelineByPropertyName = $true, 
+            ValueFromPipeLine = $true)]
         $Credential = $null,
 
-        [Parameter(ValueFromPipelineByPropertyName, 
-            ValueFromPipeLine)]
-        [string]$Server,
+        [Parameter(Mandatory = $false, 
+            ValueFromPipelineByPropertyName = $true, 
+            ValueFromPipeLine = $true)]
+        [string]
+        $Server,
 
-        [Parameter(ValueFromPipeLIneByPropertyName)]
-        [string]$Port = '4443',
+        [Parameter(Mandatory = $false, 
+            ValueFromPipeLIneByPropertyName = $true)]
+        [string]
+        $Port = '4443',
 
-        [Parameter(ParameterSetName = 'Timeout', 
-            Mandatory = $false)]
+        [Parameter(Mandatory = $false, 
+            ParameterSetName = 'Timeout')]
         [ValidateSet('STATIC_TIMEOUT',
             'INACTIVITY_TIMEOUT')]
-        [string]$TimeoutType,
+        [string]
+        $TimeoutType,
 
-        [Parameter(ParameterSetName = 'Timeout', 
-            Mandatory = $true)]
-        [int]$Timeout
+        [Parameter(Mandatory = $true, 
+            ParameterSetName = 'Timeout')]
+        [int]
+        $Timeout
     )
     process {
         Set-Variable -Name 'XMSServer' -Value $Server -Scope global
@@ -558,28 +684,37 @@ $Token = Get-XMAuthToken -Api "https://mdm.citrix.com:4443/xenmobile/api/v1" -Cr
 
 #> 
     param(
-        [Parameter(ValueFromPipelineByPropertyName, 
-            ValueFromPipeLine)]
-        [string]$Api,
+        [Parameter(Mandatory = $false, 
+            ValueFromPipelineByPropertyName = $true, 
+            ValueFromPipeLine = $true)]
+        [string]
+        $Api,
 
-        [Parameter(valueFromPipelineByPropertyName, 
-            ValueFromPipeLine)]
+        [Parameter(Mandatory = $false, 
+            ValueFromPipelineByPropertyName = $true, 
+            ValueFromPipeLine = $true)]
         $Credential = $null,
 
-        [Parameter(ValueFromPipelineByPropertyName, 
-            ValueFromPipeLine)]
-        [string]$User,
+        [Parameter(Mandatory = $false, 
+            ValueFromPipelineByPropertyName = $true, 
+            ValueFromPipeLine = $true)]
+        [string]
+        $User,
 
         [Parameter(ValueFromPipelineByPropertyName, 
             ValueFromPipeLine)]
         [string]$Password,
 
-        [Parameter(ValueFromPipelineByPropertyName, 
-            ValueFromPipeLine)]
-        [string]$Server,
+        [Parameter(Mandatory = $false,
+            ValueFromPipelineByPropertyName = $true, 
+            ValueFromPipeLine = $true)]
+        [string]
+        $Server,
 
-        [Parameter(ValueFromPipeLIneByPropertyName)]
-        [string]$Port = '4443'
+        [Parameter(Mandatory = $false, 
+            ValueFromPipeLIneByPropertyName = $true)]
+        [string]
+        $Port = '4443'
     )
     $Entity = '/authentication/login'
     #$URL    = "https://$($Server):$($Port)/xenmobile/api/v1/authentication/login"
@@ -794,14 +929,14 @@ This will read a CSV file and create an enrolment for each of the entries.
                 notifyNow = $NotifyNow
             }
             Write-Verbose -Message 'Created enrollment request object for submission to server.'
-            $EnrollmentResult = postObject -Entity '/enrollment' -Target $Body -ErrorAction Stop
+            $EnrollmentResult = Submit-XMObject -Entity '/enrollment' -Target $Body -ErrorAction Stop
             Write-Verbose -Message "Enrollment invitation submitted."
             # the next portion of the function will download additional information about the enrollment request
             # this is pointless if the invitation was not correctly created due to an error with the request. 
             # Hence, we only run this, if there is an actual invitation in the enrollmentResult value. 
             if ($null -ne $EnrollmentResult) {
                 Write-Verbose -Message 'An enrollment invication was created. Searching for additional details.'
-                $SearchResult = Search-XMObject -Entity '/enrollment/filter' -Criteria $EnrollmentResult.token
+                $SearchResult = Find-XMObject -Entity '/enrollment/filter' -Criteria $EnrollmentResult.token
                 $Enrollment = $SearchResult.enrollmentFilterResponse.enrollmentList.enrollments
                 $Enrollment | Add-Member -NotePropertyName url -NotePropertyValue $EnrollmentResult.url
                 $Enrollment | Add-Member -NotePropertyName message -NotePropertyValue $EnrollmentResult.message
@@ -847,7 +982,7 @@ NEEDS TEXT
     }
     process {
         $Body = "[`"$($Token -join '","')`"]"
-        postObject -Entity '/enrollment/revoke' -Target $Body -ErrorAction Stop
+        Submit-XMObject -Entity '/enrollment/revoke' -Target $Body -ErrorAction Stop
     }
 }
 
@@ -942,7 +1077,7 @@ Get-XMEnrollment -Filter "[enrollment.invitationStatus.expired]"
         checkSession
     }
     process {
-        $Searchresult = Search-XMObject  -Entity '/enrollment/filter' -Criteria $User -FilterIds $Filter -ResultSetSize $ResultSetSize
+        $Searchresult = Find-XMObject  -Entity '/enrollment/filter' -Criteria $User -FilterIds $Filter -ResultSetSize $ResultSetSize
         $ResultSet =  $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments
         $ResultSet | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
         return $ResultSet
@@ -1011,7 +1146,7 @@ Get-XMDevice -Criteria "ward@citrix.com" -Filter "[device.mode.enterprise.manage
         checkSession
     } 
     process { 
-        $Results = Search-XMObject -Entity '/device/filter' -Criteria $Criteria -FilterIds $Filter -ResultSetSize $ResultSetSize
+        $Results = Find-XMObject -Entity '/device/filter' -Criteria $Criteria -FilterIds $Filter -ResultSetSize $ResultSetSize
         return $Results.filteredDevicesDataList 
     }
 }
@@ -1082,7 +1217,7 @@ Get-XMDevice -User "aford@corp.vanbesien.com" | Update-XMDevice
     }
     process {
         write-verbose -Message "This will send an update to device $($Id)"
-        postObject -Entity '/device/refresh' -Target $Id
+        Submit-XMObject -Entity '/device/refresh' -Target $Id
     }
 }
 
@@ -1117,7 +1252,7 @@ Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceWipe
     }
     process {
         if ($PSCmdlet.ShouldProcess($Id)) {
-            postObject -Entity '/device/wipe' -Target $Id
+            Submit-XMObject -Entity '/device/wipe' -Target $Id
         }
     }
 }
@@ -1153,7 +1288,7 @@ Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceSelectiveWipe
     }
     process {
         if ($PSCmdlet.ShouldProcess($id)) {
-            postObject -Entity '/device/selwipe' -Target $Id
+            Submit-XMObject -Entity '/device/selwipe' -Target $Id
         }
     }
 }
@@ -1185,7 +1320,7 @@ Get-XMDeviceDeliveryGroups -Id "8"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/$($Id)/deliverygroups"
+        $Result = Get-XMObject -Entity "/device/$($Id)/deliverygroups"
         return $Result.deliveryGroups
     }
 }
@@ -1217,7 +1352,7 @@ Get-XMDeviceActions -Id "8"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/$($Id)/actions"
+        $Result = Get-XMObject -Entity "/device/$($Id)/actions"
         return $Result
     }
 }
@@ -1251,7 +1386,7 @@ Get-XMDeviceApps -Id "8"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/$($Id)/apps"
+        $Result = Get-XMObject -Entity "/device/$($Id)/apps"
         return $Result.applications
     }
 }
@@ -1284,7 +1419,7 @@ Get-XMDeviceManagedApps -Id "8"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/$($Id)/managedswinventory"
+        $Result = Get-XMObject -Entity "/device/$($Id)/managedswinventory"
         return $Result.softwareinventory
     }
 }
@@ -1315,7 +1450,7 @@ Get-XMDeviceSoftwareInventory -Id "8"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/$($Id)/softwareinventory"
+        $Result = Get-XMObject -Entity "/device/$($Id)/softwareinventory"
         return $Result.softwareInventories
     }
 }
@@ -1347,7 +1482,7 @@ Get-XMDeviceInfo -Id "8"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/$($Id)"
+        $Result = Get-XMObject -Entity "/device/$($Id)"
         return $Result.device
     }
 }
@@ -1378,7 +1513,7 @@ Get-XMDevicePolicy -Id "8"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/$($Id)/policies"
+        $Result = Get-XMObject -Entity "/device/$($Id)/policies"
         return $Result.policies
     }
 }
@@ -1412,7 +1547,7 @@ Get-XMDevice -Name "Ward@citrix.com" | Get-XMDeviceProperties
         checkSession
     }
     process {
-        $Result = getObject -Entity "/device/properties/$($Id)"
+        $Result = Get-XMObject -Entity "/device/properties/$($Id)"
         return $Result.devicePropertiesList.deviceProperties.devicePropertyParameters
     }
 }
@@ -1466,7 +1601,7 @@ Set-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED" -Value "1"
                 name  = $Name;
                 value = $Value
             }
-            postObject -Entity "/device/property/$($Id)" -Target $Body
+            Submit-XMObject -Entity "/device/property/$($Id)" -Target $Body
         }
     }
 }
@@ -1549,7 +1684,7 @@ Switch-XMDeviceAppLock -Id "8", "11"
     }
     process {
         if ($PSCmdlet.ShouldProcess($Id)) {
-            postObject -Entity '/device/appLock' -Target $Id
+            Submit-XMObject -Entity '/device/appLock' -Target $Id
         }
     }
 }
@@ -1662,7 +1797,7 @@ NEEDS TEXT
         if ($Filter.Length -gt 0) {
             $Body.Add('filterIds', $($Filter -join ','))
         }
-        $Response = postObject -Entity '/application/filter' -Target $Body
+        $Response = Submit-XMObject -Entity '/application/filter' -Target $Body
         return $Response.applicationListData.appList
     }
 }
@@ -2151,7 +2286,7 @@ Get-XMClientProperty -Key "ENABLE_PASSWORD_CACHING"
         checkSession
     }
     process {
-        $Result = getObject -Entity "/clientproperties/$($Key)"
+        $Result = Get-XMObject -Entity "/clientproperties/$($Key)"
         return $Result.allClientProperties
     }
 }
@@ -2212,7 +2347,7 @@ New-XMClientProperty -Displayname "Enable touch ID" -Description "Enables touch 
                 value       = $Value
             }
             Write-Verbose -Message "Creating: displayName: $($Displayname), description: $($Description), key: $($Key), value: $($Value)"
-            postObject -Entity '/clientproperties' -Target $Body
+            Submit-XMObject -Entity '/clientproperties' -Target $Body
         }
     }
 }
@@ -2278,7 +2413,7 @@ Set-XMClientProperty -Key "ENABLE_TOUCH_ID_AUTH" -Value "false"
                 value       = $Value
             }
             Write-Verbose -Message "Changing: displayName: $($Displayname), description: $($Description), key: $($Key), value: $($Value)"
-            putObject -Entity "/clientproperties/$($Key)" -Target $Body
+            Set-XMObject -Entity "/clientproperties/$($Key)" -Target $Body
         }
     }
 }
