@@ -1,5 +1,5 @@
 ﻿#
-# Version: 1.2.3
+# Version: 1.2.4
 # Revision 2016.10.19: improved the new-xmenrollment function: added parameters of notification templates as well as all other options. Also included error checking to provide a more useful error message in case incorrect information is provided to the function. 
 # Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name.
 # Revision 1.1.4 2016.11.24: corrected example in new-xmenrollment
@@ -7,6 +7,7 @@
 # Revision 1.2.1 2022-02-20: Code beautification and consistency.
 # Revision 1.2.2 2022-02-21: Modified New-XMSession with static timeout parameters. This is a quick fix/workaround for making it work when the account used is RBAC limited, and not able to read server properties.
 # Revision 1.2.3 2022-02-21: Added Revoke-XMEnrollment, Remove-XMEnrollment, Switch-XMDeviceAppLock, Get-XMApp
+# Revision 1.2.4 2022-10-21: More code beautification and consistency.
 
 
 
@@ -95,6 +96,7 @@ function Find-XMObject { #TODO HELP
         [Parameter(Mandatory = $false)]
         $ResultSetSize = 999
     )
+    begin {}
     process { 
         $Request.Method = 'POST'
         $Request.Entity = $Entity
@@ -148,6 +150,7 @@ function Remove-XMObject { #TODO HELP
         [Parameter(Mandatory = $false)]
         [string]$Target
     )
+    begin {}
     process { 
         $Request.Method = 'DELETE'
         $Request.Entity = $Entity
@@ -190,6 +193,7 @@ function Submit-XMObject { #TODO HELP
         [Parameter(Mandatory = $true)]
         $Target
     )
+    begin {}
     process { 
         Write-Verbose -Message 'Submitting POST request.'
         $Request.Method = 'POST'
@@ -233,6 +237,7 @@ function Set-XMObject { #TODO HELP
         [Parameter(Mandatory = $true)]
         $Target
     )
+    begin {}
     process { 
         Write-Verbose -Message 'Submitting PUT request.'
         $Request.Method = 'PUT'
@@ -270,6 +275,7 @@ function Get-XMObject { #TODO HELP
         [Parameter(Mandatory = $true)]
         $Entity
     )
+    begin {}
     process {
         $Request.Method = 'GET'
         $Request.Entity = $Entity
@@ -341,8 +347,7 @@ function New-XMCredential { #TODO
         }
         'FileSystem' {
             $File = Join-Path -Path $Path -ChildPath "$($Username).txt"
-            Set-Content -Path $Path -Value $Secure -Force
-             -Path $Path -Type String -Name $Username -Value $Secure -Force
+            Set-Content -Path $File -Value $Secure -Force
             break
         }
         Default {
@@ -378,7 +383,21 @@ function Get-XMCredential { #TODO
         [string]
         $Path = 'HKCU:\Software\XenMobileShell'
     )
-	$SecurePass = Get-ItemProperty -Path $Regpath -Name $Username | Select-Object -ExpandProperty $Username | ConvertTo-SecureString
+    switch ($(Get-Item -Path $Path).PSProvider.Name) {
+        'Registry' {
+            $SecurePass = Get-ItemProperty -Path $Path -Name $Username | Select-Object -ExpandProperty $Username | ConvertTo-SecureString
+            break
+        }
+        'FileSystem' {
+            $File = Join-Path -Path $Path -ChildPath "$($Username).txt"
+            $SecurePass = Get-Content -Path $File | ConvertTo-SecureString
+            break
+        }
+        Default {
+            throw "Unsupported provider."
+            break
+        }
+    }
 	$Credential = New-Object System.Management.Automation.PsCredential($Username, $SecurePass)
 	$BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
 	$Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
@@ -412,11 +431,11 @@ function Export-XMCredential { #TODO
 	# Look at the object type of the $Credential parameter to determine how to handle it
 	switch ($Credential.GetType().Name) {
 		# It is a credential, so continue
-		PSCredential        { continue }
+		PSCredential { continue }
 		# It is a string, so use that as the username and prompt for the password
-		String                           { $Credential = Get-Credential -Credential $Credential }
+		String       { $Credential = Get-Credential -Credential $Credential }
 		# In all other caess, throw an error and exit
-		default                          { Throw "You must specify a credential object to export to disk." }
+		default      { throw "You must specify a credential object to export to disk." }
 	}
 
 	# Create temporary object to be serialized to disk
@@ -473,7 +492,7 @@ function Import-XMCredential { #TODO
 	Write-Output $Credential
 }
 
-function New-XMSession {
+function New-XMSession { #TODO stuff
 <#
 .SYNOPSIS
 Starts a XMS session. Run this before running any other commands. 
@@ -565,6 +584,7 @@ New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
         [int]
         $Timeout
     )
+    begin {}
     process {
         Set-Variable -Name 'XMSServer' -Value $Server -Scope global
 
@@ -646,9 +666,10 @@ New-XMSession -Credential (Get-Credential) -Server mdm.citrix.com
         Write-Verbose -Message 'A session has been started.'
         Write-Host "Authentication successfull. Token: $($XMSAuthToken)`nSession will expire at: $($XMSessionExpiry)" -ForegroundColor Yellow
     }
+    end {}
 }
 
-function Get-XMAuthToken {
+function Get-XMAuthToken { # TODO stuff
 <#
 .SYNOPSIS
 This function will authenticate against the server and will provide you with an authentication token.
@@ -948,9 +969,10 @@ This will read a CSV file and create an enrolment for each of the entries.
             }
         }
     }
+    end {}
 }
 
-function Get-XMEnrollment {
+function Get-XMEnrollment { # TODO
     <#
     .SYNOPSIS
     Searches for enrollment invitations. 
@@ -989,47 +1011,48 @@ function Get-XMEnrollment {
     Get-XMEnrollment -Filter "[enrollment.invitationStatus.expired]"
     
     #>
-        [CmdletBinding()]
-        param(
-            [Parameter(ValueFromPipelineByPropertyName)]
-            [string]$User,
-    
-            [Parameter()]
-            [string]$Filter = '[]',
-    
-            [Parameter()]
-            [int]$ResultSetSize = 999
-        )
-        begin {
-            #check session state
-            checkSession
-        }
-        process {
-            $Searchresult = Find-XMObject  -Entity '/enrollment/filter' -Criteria $User -FilterIds $Filter -ResultSetSize $ResultSetSize
-            $ResultSet =  $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments
-            $ResultSet | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
-            return $ResultSet
-        }
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [string]$User,
+
+        [Parameter()]
+        [string]$Filter = '[]',
+
+        [Parameter()]
+        [int]$ResultSetSize = 999
+    )
+    begin {
+        #check session state
+        checkSession
+    }
+    process {
+        $Searchresult = Find-XMObject  -Entity '/enrollment/filter' -Criteria $User -FilterIds $Filter -ResultSetSize $ResultSetSize
+        $ResultSet =  $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments
+        $ResultSet | Add-Member -NotePropertyName AgentNotificationTemplateName -NotePropertyValue $Searchresult.enrollmentFilterResponse.enrollmentList.enrollments.notificationTemplateCategories.notificationTemplate.name
+        return $ResultSet
+    }
+    end {}
 }
     
-function Revoke-XMEnrollment {
-<#
-.SYNOPSIS
-Revoke Enrollment Token
+function Revoke-XMEnrollment { # TODO
+    <#
+    .SYNOPSIS
+    Revoke Enrollment Token
 
-.DESCRIPTION
-NEEDS TEXT
+    .DESCRIPTION
+    NEEDS TEXT
 
-.PARAMETER Token
-NEEDS TEXT
+    .PARAMETER Token
+    NEEDS TEXT
 
-.EXAMPLE
-NEEDS TEXT
+    .EXAMPLE
+    NEEDS TEXT
 
-.EXAMPLE
-NEEDS TEXT
+    .EXAMPLE
+    NEEDS TEXT
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1046,26 +1069,27 @@ NEEDS TEXT
         $Body = "[`"$($Token -join '","')`"]"
         Submit-XMObject -Entity '/enrollment/revoke' -Target $Body -ErrorAction Stop
     }
+    end {}
 }
 
-function Remove-XMEnrollment {
-<#
-.SYNOPSIS
-Remove Enrollment Token
+function Remove-XMEnrollment { # TODO
+    <#
+    .SYNOPSIS
+    Remove Enrollment Token
 
-.DESCRIPTION
-NEEDS TEXT
+    .DESCRIPTION
+    NEEDS TEXT
 
-.PARAMETER Token
-NEEDS TEXT
+    .PARAMETER Token
+    NEEDS TEXT
 
-.EXAMPLE
-NEEDS TEXT
+    .EXAMPLE
+    NEEDS TEXT
 
-.EXAMPLE
-NEEDS TEXT
+    .EXAMPLE
+    NEEDS TEXT
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1082,54 +1106,55 @@ NEEDS TEXT
         $Body = "[`"$($Token -join '","')`"]"
         Remove-XMObject -Entity '/enrollment/revoke' -Target $Body -ErrorAction Stop
     }
+    end {}
 }
 
 # Devices functions
-function Get-XMDevice {
-<#
-.SYNOPSIS
-Basic search function to find devices
+function Get-XMDevice { # TODO
+    <#
+    .SYNOPSIS
+    Basic search function to find devices
 
-.DESCRIPTION
-Search function to find devices. If you specify the user parameter, you get all devices for a particular user. 
-The devices are returned as an array of objects, each object representing a single device. 
+    .DESCRIPTION
+    Search function to find devices. If you specify the user parameter, you get all devices for a particular user. 
+    The devices are returned as an array of objects, each object representing a single device. 
 
-.PARAMETER Criteria
-Specify a search criteria. If you specify a UPN or username, all enrollments for the username will be returned. 
-It also possible to provide other values such as serial number to find devices. Effectively, anything that will work in the 'search' field in the GUI will work here as well.    
+    .PARAMETER Criteria
+    Specify a search criteria. If you specify a UPN or username, all enrollments for the username will be returned. 
+    It also possible to provide other values such as serial number to find devices. Effectively, anything that will work in the 'search' field in the GUI will work here as well.    
 
-.PARAMETER Filter
-Specify a filter to further reduce the amount of data returned.  The syntax is "[filter]". For example, to see all MDM device enrolments, use "[device.mode.mdm.managed,device.mode.mdm.unmanaged]".
-Here are some of the filters: 
-device.mode.enterprise.managed
-device.mode.enterprise.unmanaged
-device.mode.mdm.managed
-device.mode.mdm.unmanaged
-device.mode.mam.managed
-device.mode.mam.unmanaged 
-device.status.jailbroken
-device.status.as.gateway.blocked
-device.status.out.of.compliance
-device.status.samsung.knox.not.attested
-device.status.enrollment.program.registred (for Apple DEP)
-group#/group/ActiveDirectory/citrix/com/XM-Users@_fn_@normal   (for users in AD group XM-users in the citrix.com AD)
-device.platform.ios
-device.platform.android
-device.platform#10.0.1@_fn_@device.platform.ios.version   (for iOS device, version 10.0.1)
-device.ownership.byod
-device.ownership.corporate
-device.ownership.unknown
-device.inactive.time.30.days
-device.inactive.time.more.than.30.days
-device.inactive.time.8.hours
+    .PARAMETER Filter
+    Specify a filter to further reduce the amount of data returned.  The syntax is "[filter]". For example, to see all MDM device enrolments, use "[device.mode.mdm.managed,device.mode.mdm.unmanaged]".
+    Here are some of the filters: 
+    device.mode.enterprise.managed
+    device.mode.enterprise.unmanaged
+    device.mode.mdm.managed
+    device.mode.mdm.unmanaged
+    device.mode.mam.managed
+    device.mode.mam.unmanaged 
+    device.status.jailbroken
+    device.status.as.gateway.blocked
+    device.status.out.of.compliance
+    device.status.samsung.knox.not.attested
+    device.status.enrollment.program.registred (for Apple DEP)
+    group#/group/ActiveDirectory/citrix/com/XM-Users@_fn_@normal   (for users in AD group XM-users in the citrix.com AD)
+    device.platform.ios
+    device.platform.android
+    device.platform#10.0.1@_fn_@device.platform.ios.version   (for iOS device, version 10.0.1)
+    device.ownership.byod
+    device.ownership.corporate
+    device.ownership.unknown
+    device.inactive.time.30.days
+    device.inactive.time.more.than.30.days
+    device.inactive.time.8.hours
 
-.PARAMETER ResultSetSize
-By default only the first 1000 records are returned. Specify the resultsetsize to get more records returned. 
+    .PARAMETER ResultSetSize
+    By default only the first 1000 records are returned. Specify the resultsetsize to get more records returned. 
 
-.EXAMPLE
-Get-XMDevice -Criteria "ward@citrix.com" -Filter "[device.mode.enterprise.managed]"
+    .EXAMPLE
+    Get-XMDevice -Criteria "ward@citrix.com" -Filter "[device.mode.enterprise.managed]"
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline)]
@@ -1149,26 +1174,27 @@ Get-XMDevice -Criteria "ward@citrix.com" -Filter "[device.mode.enterprise.manage
         $Results = Find-XMObject -Entity '/device/filter' -Criteria $Criteria -FilterIds $Filter -ResultSetSize $ResultSetSize
         return $Results.filteredDevicesDataList 
     }
+    end {}
 }
 
 function Remove-XMDevice {
-<#
-.SYNOPSIS
-Removes a device from the XMS server and database. 
+    <#
+    .SYNOPSIS
+    Removes a device from the XMS server and database. 
 
-.DESCRIPTION
-Removes a devices from the XMS server. Requires the id of the device. 
+    .DESCRIPTION
+    Removes a devices from the XMS server. Requires the id of the device. 
 
-.PARAMETER Id
-The id parameter identifies the device. You can get the id by searching for the correct device using get-device. 
+    .PARAMETER Id
+    The id parameter identifies the device. You can get the id by searching for the correct device using get-device. 
 
-.EXAMPLE
-Remove-XMDevice -Id "21" 
+    .EXAMPLE
+    Remove-XMDevice -Id "21" 
 
-.EXAMPLE
-Get-XMDevice -User "ward@citrix.com | ForEach-Object { Remove-XMDevice -Id $PSItem.id }
+    .EXAMPLE
+    Get-XMDevice -User "ward@citrix.com | ForEach-Object { Remove-XMDevice -Id $PSItem.id }
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1185,26 +1211,27 @@ Get-XMDevice -User "ward@citrix.com | ForEach-Object { Remove-XMDevice -Id $PSIt
             Remove-XMObject -Entity '/device' -Target $Id
         }
     }
+    end {}
 }
 
 function Update-XMDevice {
-<#
-.SYNOPSIS
-Sends a deploy command to the selected device. A deploy will trigger a device to check for updated policies. 
+    <#
+    .SYNOPSIS
+    Sends a deploy command to the selected device. A deploy will trigger a device to check for updated policies. 
 
-.DESCRIPTION
-Sends a deploy command to the selected device. 
+    .DESCRIPTION
+    Sends a deploy command to the selected device. 
 
-.PARAMETER Id
-This parameter specifies the id of the device to target. This can be pipelined from a search command. 
+    .PARAMETER Id
+    This parameter specifies the id of the device to target. This can be pipelined from a search command. 
 
-.EXAMPLE
-Update-XMDevice -Id "24" 
+    .EXAMPLE
+    Update-XMDevice -Id "24" 
 
-.EXAMPLE
-Get-XMDevice -User "aford@corp.vanbesien.com" | Update-XMDevice
+    .EXAMPLE
+    Get-XMDevice -User "aford@corp.vanbesien.com" | Update-XMDevice
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1219,26 +1246,27 @@ Get-XMDevice -User "aford@corp.vanbesien.com" | Update-XMDevice
         write-verbose -Message "This will send an update to device $($Id)"
         Submit-XMObject -Entity '/device/refresh' -Target $Id
     }
+    end {}
 }
 
 function Invoke-XMDeviceWipe {
-<#
-.SYNOPSIS
-Sends a device wipe command to the selected device.
+    <#
+    .SYNOPSIS
+    Sends a device wipe command to the selected device.
 
-.DESCRIPTION
-Sends a device wipe command. this is similar to a factory reset
+    .DESCRIPTION
+    Sends a device wipe command. this is similar to a factory reset
 
-.PARAMETER id
-This parameter specifies the id of the device to wipe. This can be pipelined from a search command. 
+    .PARAMETER id
+    This parameter specifies the id of the device to wipe. This can be pipelined from a search command. 
 
-.EXAMPLE
-Invoke-XMDeviceWipe -Id "24" 
+    .EXAMPLE
+    Invoke-XMDeviceWipe -Id "24" 
 
-.EXAMPLE
-Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceWipe
+    .EXAMPLE
+    Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceWipe
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1255,26 +1283,27 @@ Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceWipe
             Submit-XMObject -Entity '/device/wipe' -Target $Id
         }
     }
+    end {}
 }
 
 function Invoke-XMDeviceSelectiveWipe {
-<#
-.SYNOPSIS
-Sends a selective device wipe command to the selected device.
+    <#
+    .SYNOPSIS
+    Sends a selective device wipe command to the selected device.
 
-.DESCRIPTION
-Sends a selective device wipe command. This removes all policies and applications installed by the server but leaves the rest of the device alone.
+    .DESCRIPTION
+    Sends a selective device wipe command. This removes all policies and applications installed by the server but leaves the rest of the device alone.
 
-.PARAMETER Id
-This parameter specifies the id of the device to wipe. This can be pipelined from a search command. 
+    .PARAMETER Id
+    This parameter specifies the id of the device to wipe. This can be pipelined from a search command. 
 
-.EXAMPLE
-Invoke-XMDeviceSelectiveWipe -Id "24"
+    .EXAMPLE
+    Invoke-XMDeviceSelectiveWipe -Id "24"
 
-.EXAMPLE
-Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceSelectiveWipe
+    .EXAMPLE
+    Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceSelectiveWipe
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1291,24 +1320,25 @@ Get-XMDevice -User "ward@citrix.com" | Invoke-XMDeviceSelectiveWipe
             Submit-XMObject -Entity '/device/selwipe' -Target $Id
         }
     }
+    end {}
 }
 
 function Get-XMDeviceDeliveryGroups {
-<#
-.SYNOPSIS
-Displays the delivery groups for a given device specified by id.
+    <#
+    .SYNOPSIS
+    Displays the delivery groups for a given device specified by id.
 
-.DESCRIPTION
-This command lets you find all the delivery groups that apply to a particular device. You search based the ID of the device.
-To find the device id, use get-XMDevice.
+    .DESCRIPTION
+    This command lets you find all the delivery groups that apply to a particular device. You search based the ID of the device.
+    To find the device id, use get-XMDevice.
 
-.PARAMETER Id
-Specify the ID of the device. Use get-XMDevice to find the id of each device.  
+    .PARAMETER Id
+    Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
-.EXAMPLE
-Get-XMDeviceDeliveryGroups -Id "8"
+    .EXAMPLE
+    Get-XMDeviceDeliveryGroups -Id "8"
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1323,24 +1353,25 @@ Get-XMDeviceDeliveryGroups -Id "8"
         $Result = Get-XMObject -Entity "/device/$($Id)/deliverygroups"
         return $Result.deliveryGroups
     }
+    end {}
 }
 
 function Get-XMDeviceActions {
-<#
-.SYNOPSIS
-Displays the smart actions applied to a given device specified by id.
+    <#
+    .SYNOPSIS
+    Displays the smart actions applied to a given device specified by id.
 
-.DESCRIPTION
-This command lets you find all the smart actions available that apply to a particular device. You search based the ID of the device.
-To find the device id, use get-XMDevice.
+    .DESCRIPTION
+    This command lets you find all the smart actions available that apply to a particular device. You search based the ID of the device.
+    To find the device id, use get-XMDevice.
 
-.PARAMETER Id
-Specify the ID of the device. Use get-XMDevice to find the id of each device.  
+    .PARAMETER Id
+    Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
-.EXAMPLE
-Get-XMDeviceActions -Id "8"
+    .EXAMPLE
+    Get-XMDeviceActions -Id "8"
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1355,26 +1386,27 @@ Get-XMDeviceActions -Id "8"
         $Result = Get-XMObject -Entity "/device/$($Id)/actions"
         return $Result
     }
+    end {}
 }
 
 function Get-XMDeviceApps { 
-<#
-.SYNOPSIS
-Displays all XenMobile store apps installed on a device, whether or ot the app was installed from the XenMobile Store 
+    <#
+    .SYNOPSIS
+    Displays all XenMobile store apps installed on a device, whether or ot the app was installed from the XenMobile Store 
 
-.DESCRIPTION
-This command will display all apps from the XenMobile Store installed on a device. This includes apps that were installed by the user themselves without selecting it from the XenMobile store. Thus is includes apps that are NOT managed but listed as available to the device.
-For apps that are NOT managed, an inventory policy is required to detect them. 
+    .DESCRIPTION
+    This command will display all apps from the XenMobile Store installed on a device. This includes apps that were installed by the user themselves without selecting it from the XenMobile store. Thus is includes apps that are NOT managed but listed as available to the device.
+    For apps that are NOT managed, an inventory policy is required to detect them. 
 
-This command is useful to find out which of the XenMobile store apps are installed (whether or not they are managed or installed from the XenMobile store).  
+    This command is useful to find out which of the XenMobile store apps are installed (whether or not they are managed or installed from the XenMobile store).  
 
-.PARAMETER Id
-Specify the ID of the device. Use get-XMDevice to find the id of each device.  
+    .PARAMETER Id
+    Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
-.EXAMPLE
-Get-XMDeviceApps -Id "8" 
+    .EXAMPLE
+    Get-XMDeviceApps -Id "8" 
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1389,25 +1421,26 @@ Get-XMDeviceApps -Id "8"
         $Result = Get-XMObject -Entity "/device/$($Id)/apps"
         return $Result.applications
     }
+    end {}
 }
 
 function Get-XMDeviceManagedApps { 
-<#
-.SYNOPSIS
-Displays the XMS managed apps for a given device specified by id. Managed Apps include those apps installed from the XenMobile Store.  
+    <#
+    .SYNOPSIS
+    Displays the XMS managed apps for a given device specified by id. Managed Apps include those apps installed from the XenMobile Store.  
 
-.DESCRIPTION
-This command displays all managed applications on a particular device. Managed applications are those applications that have been installed from the XenMobile Store. 
-If a public store app is installed through policy on a device where the app is already installed, the user is given the option to have XMS manage the app. In that case, the app will be included in the output of this command. 
-If the user chooses not to let XMS manage the App, it will not be included in the output of this command. the get-XMDeviceApps will still list that app. 
+    .DESCRIPTION
+    This command displays all managed applications on a particular device. Managed applications are those applications that have been installed from the XenMobile Store. 
+    If a public store app is installed through policy on a device where the app is already installed, the user is given the option to have XMS manage the app. In that case, the app will be included in the output of this command. 
+    If the user chooses not to let XMS manage the App, it will not be included in the output of this command. the get-XMDeviceApps will still list that app. 
 
-.PARAMETER Id
-Specify the ID of the device. Use get-XMDevice to find the id of each device.  
+    .PARAMETER Id
+    Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
-.EXAMPLE
-Get-XMDeviceManagedApps -Id "8" 
+    .EXAMPLE
+    Get-XMDeviceManagedApps -Id "8" 
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1422,23 +1455,24 @@ Get-XMDeviceManagedApps -Id "8"
         $Result = Get-XMObject -Entity "/device/$($Id)/managedswinventory"
         return $Result.softwareinventory
     }
+    end {}
 }
 
 function Get-XMDeviceSoftwareInventory { 
-<#
-.SYNOPSIS
-Displays the application inventory of a particular device.   
+    <#
+    .SYNOPSIS
+    Displays the application inventory of a particular device.   
 
-.DESCRIPTION
-This command will list all installed applications as far as the server knows. Apps managed by the server are always included, other apps (such as personal apps) are only included if an inventory policy is deployed to the device. 
+    .DESCRIPTION
+    This command will list all installed applications as far as the server knows. Apps managed by the server are always included, other apps (such as personal apps) are only included if an inventory policy is deployed to the device. 
 
-.PARAMETER Id
-Specify the ID of the device. Use get-XMDevice to find the id of each device.  
+    .PARAMETER Id
+    Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
-.EXAMPLE
-Get-XMDeviceSoftwareInventory -Id "8" 
+    .EXAMPLE
+    Get-XMDeviceSoftwareInventory -Id "8" 
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1453,24 +1487,25 @@ Get-XMDeviceSoftwareInventory -Id "8"
         $Result = Get-XMObject -Entity "/device/$($Id)/softwareinventory"
         return $Result.softwareInventories
     }
+    end {}
 }
 
 function Get-XMDeviceInfo {
-<#
-.SYNOPSIS
-Displays the properties of a particular device.   
+    <#
+    .SYNOPSIS
+    Displays the properties of a particular device.   
 
-.DESCRIPTION
-This command will output all properties, settings, configurations, certificates etc of a given device. This is typically an extensive list that may need to be further filtered down.
-This command aggregates a lot of information available through other commands as well. 
+    .DESCRIPTION
+    This command will output all properties, settings, configurations, certificates etc of a given device. This is typically an extensive list that may need to be further filtered down.
+    This command aggregates a lot of information available through other commands as well. 
 
-.PARAMETER Id
-Specify the ID of the device. Use get-XMDevice to find the id of each device.  
+    .PARAMETER Id
+    Specify the ID of the device. Use get-XMDevice to find the id of each device.  
 
-.EXAMPLE
-Get-XMDeviceInfo -Id "8"
+    .EXAMPLE
+    Get-XMDeviceInfo -Id "8"
 
-#>  
+    #>  
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1485,6 +1520,7 @@ Get-XMDeviceInfo -Id "8"
         $Result = Get-XMObject -Entity "/device/$($Id)"
         return $Result.device
     }
+    end {}
 }
 
 function Get-XMDevicePolicy {
@@ -1519,23 +1555,23 @@ Get-XMDevicePolicy -Id "8"
 }
 
 function Get-XMDeviceProperty {
-<#
-.SYNOPSIS
-Gets the properties for the device. 
+    <#
+    .SYNOPSIS
+    Gets the properties for the device. 
 
-.DESCRIPTION
-Gets the properties for the device. This is different from the get-xmdeviceinfo command which includes the properties but also returns all other information about a device. This command returns a subset of that data. 
+    .DESCRIPTION
+    Gets the properties for the device. This is different from the get-xmdeviceinfo command which includes the properties but also returns all other information about a device. This command returns a subset of that data. 
 
-.PARAMETER Id
-Specify the ID of the device for which you want to get the properties. 
+    .PARAMETER Id
+    Specify the ID of the device for which you want to get the properties. 
 
-.EXAMPLE
-Get-XMDeviceProperty -Id "8"
+    .EXAMPLE
+    Get-XMDeviceProperty -Id "8"
 
-.EXAMPLE
-Get-XMDevice -Name "Ward@citrix.com" | Get-XMDeviceProperties
+    .EXAMPLE
+    Get-XMDevice -Name "Ward@citrix.com" | Get-XMDeviceProperties
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName, 
@@ -1550,32 +1586,33 @@ Get-XMDevice -Name "Ward@citrix.com" | Get-XMDeviceProperties
         $Result = Get-XMObject -Entity "/device/properties/$($Id)"
         return $Result.devicePropertiesList.deviceProperties.devicePropertyParameters
     }
+    end {}
 }
 
 function Set-XMDeviceProperty {
-<#
-.SYNOPSIS
-adds, changes a properties for a device. 
+    <#
+    .SYNOPSIS
+    adds, changes a properties for a device. 
 
-.DESCRIPTION
-add or change properties for a device. Specify the device by ID, and property by name. To get the name of the property, search using get-xmdeviceproperties or get-xmdeviceknownproperties. 
-WARNING, avoid making changes to properties that are discovered by the existing processes. Use to to configure/set new properties. Most properties should not be changed this way.
+    .DESCRIPTION
+    add or change properties for a device. Specify the device by ID, and property by name. To get the name of the property, search using get-xmdeviceproperties or get-xmdeviceknownproperties. 
+    WARNING, avoid making changes to properties that are discovered by the existing processes. Use to to configure/set new properties. Most properties should not be changed this way.
 
-One property that is often changed is the ownership of a device. That property is called "CORPORATE_OWNED". Value '0' means BYOD, '1' means corporate and for unknown the property doesn't exist. 
+    One property that is often changed is the ownership of a device. That property is called "CORPORATE_OWNED". Value '0' means BYOD, '1' means corporate and for unknown the property doesn't exist. 
 
-.PARAMETER Id
-Specify the ID of the device for which you want to get the properties. 
+    .PARAMETER Id
+    Specify the ID of the device for which you want to get the properties. 
 
-.PARAMETER Name
-Specify the name of the property. Such as "CORPORATE_OWNED" 
+    .PARAMETER Name
+    Specify the name of the property. Such as "CORPORATE_OWNED" 
 
-.PARAMETER Value
-Specify the value of the property. 
+    .PARAMETER Value
+    Specify the value of the property. 
 
-.EXAMPLE
-Set-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED" -Value "1"
+    .EXAMPLE
+    Set-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED" -Value "1"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact='High')]
     param(
@@ -1604,27 +1641,28 @@ Set-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED" -Value "1"
             Submit-XMObject -Entity "/device/property/$($Id)" -Target $Body
         }
     }
+    end {}
 }
 
 function Remove-XMDeviceProperty { 
-<#
-.SYNOPSIS
-Deletes a properties for a device. 
+    <#
+    .SYNOPSIS
+    Deletes a properties for a device. 
 
-.DESCRIPTION
-Delete a property from a device. 
-WARNING: be careful when using this function. There is no safety check to ensure you don't accidentally delete things you shouldn't.
+    .DESCRIPTION
+    Delete a property from a device. 
+    WARNING: be careful when using this function. There is no safety check to ensure you don't accidentally delete things you shouldn't.
 
-.PARAMETER Id
-Specify the ID of the device for which you want to get the properties. 
+    .PARAMETER Id
+    Specify the ID of the device for which you want to get the properties. 
 
-.PARAMETER Name
-Specify the name of the property. Such as "CORPORATE_OWNED" 
+    .PARAMETER Name
+    Specify the name of the property. Such as "CORPORATE_OWNED" 
 
-.EXAMPLE
-Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
+    .EXAMPLE
+    Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1651,26 +1689,27 @@ Remove-XMDeviceProperty -Id "8" -Name "CORPORATE_OWNED"
             Remove-XMObject -Entity "/device/property/$($Property.id)" -Target $null
         }
     }
+    end {}
 }
 
 function Switch-XMDeviceAppLock {
-<#
-.SYNOPSIS
-Sends app lock/unlock command.
+    <#
+    .SYNOPSIS
+    Sends app lock/unlock command.
 
-.DESCRIPTION
-The appLock api is a toggle api. Subsequent requests lock/unlock in a toggle fashion.
+    .DESCRIPTION
+    The appLock api is a toggle api. Subsequent requests lock/unlock in a toggle fashion.
 
-.PARAMETER Id
-This parameter specifies the id of the device(s) to switch/toggle the App Lock for.
+    .PARAMETER Id
+    This parameter specifies the id of the device(s) to switch/toggle the App Lock for.
 
-.EXAMPLE
-Switch-XMDeviceAppLock -Id "8"
+    .EXAMPLE
+    Switch-XMDeviceAppLock -Id "8"
 
-.EXAMPLE
-Switch-XMDeviceAppLock -Id "8", "11"
+    .EXAMPLE
+    Switch-XMDeviceAppLock -Id "8", "11"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1687,45 +1726,46 @@ Switch-XMDeviceAppLock -Id "8", "11"
             Submit-XMObject -Entity '/device/appLock' -Target $Id
         }
     }
+    end {}
 }
 
 # Application functions.
 function Get-XMApp { #TODO
-<#
-.SYNOPSIS
-Get Applications by Filter
+    <#
+    .SYNOPSIS
+    Get Applications by Filter
 
-.DESCRIPTION
-NEEDS TEXT
+    .DESCRIPTION
+    NEEDS TEXT
 
-.PARAMETER Search
-NEEDS TEXT
+    .PARAMETER Search
+    NEEDS TEXT
 
-.PARAMETER FilterByType
-NEEDS TEXT
+    .PARAMETER FilterByType
+    NEEDS TEXT
 
-.PARAMETER FilterByPlatform
-NEEDS TEXT
+    .PARAMETER FilterByPlatform
+    NEEDS TEXT
 
-.PARAMETER Start
-NEEDS TEXT
+    .PARAMETER Start
+    NEEDS TEXT
 
-.PARAMETER Limit
-NEEDS TEXT
+    .PARAMETER Limit
+    NEEDS TEXT
 
-.PARAMETER Sort
-NEEDS TEXT
+    .PARAMETER Sort
+    NEEDS TEXT
 
-.PARAMETER EnableCount
-NEEDS TEXT
+    .PARAMETER EnableCount
+    NEEDS TEXT
 
-.EXAMPLE
-NEEDS TEXT
+    .EXAMPLE
+    NEEDS TEXT
 
-.EXAMPLE
-NEEDS TEXT
+    .EXAMPLE
+    NEEDS TEXT
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1800,102 +1840,103 @@ NEEDS TEXT
         $Response = Submit-XMObject -Entity '/application/filter' -Target $Body
         return $Response.applicationListData.appList
     }
+    end {}
 }
 
 function Get-XMAppDetails { #TODO
-<#
-.SYNOPSIS
-NEEDS TEXT
+    <#
+    .SYNOPSIS
+    NEEDS TEXT
 
-.DESCRIPTION
-NEEDS TEXT
+    .DESCRIPTION
+    NEEDS TEXT
 
-.PARAMETER Id
-NEEDS TEXT
+    .PARAMETER Id
+    NEEDS TEXT
 
-.PARAMETER Platform
-NEEDS TEXT
+    .PARAMETER Platform
+    NEEDS TEXT
 
-.EXAMPLE
-NEEDS TEXT
-{
-    "status": 0,
-    "message": "Success",
-    "container": {
-        "id": 4,
-        "name": "Microsoft Word",
-        "description": "app description",
-        "createdOn": null,
-        "lastUpdated": null,
-        "disabled": false,
-        "nbSuccess": 0,
-        "nbFailure": 0,
-        "nbPending": 0,
-        "schedule": {
-            "enableDeployment": true,
-            "deploySchedule": "LATER",
-            "deployScheduleCondition": "EVERYTIME",
-            "deployDate": "3/14/2018",
-            "deployTime": "17:44",
-            "deployInBackground": false
-        },
-        "permitAsRequired": true,
-        "iconData": "/9j/4AAQSkZJRgABAQEA...",
-        "appType": "App Store App",
-        "categories": [ "Default" ],
-        "roles": [ "AllUsers" ],
-        "workflow": null,
-        "vppAccount": null,
-        "iphone": {
-            "name": "MobileApp6",
-            "displayName": "Microsoft Office Word",
-            "description": "Microsoft Office Word app from app store",
-            "paid": false,
-            "removeWithMdm": true,
-            "preventBackup": true,
-            "changeManagementState": true,
-            "associateToDevice": false,
-            "canAssociateToDevice": false,
-            "canDissociateVPP": true,
-            "appVersion": "2.3",
-            "store": {
-                "rating": {
-                    "rating": 0,
-                    "reviewerCount": 0
-                },
-                "screenshots": [],
-                "faqs": [ {
-                    "question": "Question?",
-                    "answer": "Answer",
-                    "displayOrder": 1 
-                } ],
-                "storeSettings": {
-                    "rate": false,
-                    "review": false
-                }
+    .EXAMPLE
+    NEEDS TEXT
+    {
+        "status": 0,
+        "message": "Success",
+        "container": {
+            "id": 4,
+            "name": "Microsoft Word",
+            "description": "app description",
+            "createdOn": null,
+            "lastUpdated": null,
+            "disabled": false,
+            "nbSuccess": 0,
+            "nbFailure": 0,
+            "nbPending": 0,
+            "schedule": {
+                "enableDeployment": true,
+                "deploySchedule": "LATER",
+                "deployScheduleCondition": "EVERYTIME",
+                "deployDate": "3/14/2018",
+                "deployTime": "17:44",
+                "deployInBackground": false
             },
-            "avppParams": null,
-            "avppTokenParams": null,
-            "rules": null,
-            "appType": "mobile_ios",
-            "uuid": "8b0f08d0-52ef-453f-8d99-d4c1a3e973d7",
-            "id": 9,
-            "vppAccount": -1,
-            "iconPath": "/9j/4AAQSkZJRgABAQE..",
-            "iconUrl": "http://is3.mzstatic.com/image/thumb/Purple127/v4/e1/35/d2/e135d280-67cf-7f63-ca16-3c5f970a1d70/source/60x60bb.jpg",
-            "bundleId": "com.microsoft.Office.Word",
-            "appId": "586447913",
-            "appKey": null,
-            "storeUrl": "https://itunes.apple.com/us/app/microsoft-word/id586447913?mt=8&uo=4",
-            "b2B": false
-        },
-        "ipad": null,
-        "android": {
-            "name": "MobileApp5",
-            "displayName": "Microsoft Office Word","description": "Microsoft Word", "paid": false, "removeWithMdm": true, "preventBackup": true, "changeManagementState": false, "associateToDevice": false, "canAssociateToDevice": false, "canDissociateVPP": true, "appVersion": "16.0.8326.2034", "store": { "rating": { "rating": 0, "reviewerCount": 0 }, "screenshots": [], "faqs": [],
-    "storeSettings": { "rate": true, "review": true } }, "avppParams": null, "avppTokenParams": null, "rules": null, "appType": "mobile_android", "uuid": "40c514dd-1a8a-4e48-96ed-512b658fb333", "id": 8, "vppAccount": -1, "iconPath": "iVBORw0KGgoAAAANSU...", "iconUrl": "https://lh3.ggpht.com/j6aNgkpGRXp9PEinADFoSkyfup46-6Rb83bS41lfQC_Tc2qg96zQ_aqZcyiaV3M-Ai4", "bundleId": "com.microsoft.office.word", "appId": null, "appKey": null, "storeUrl": "https://play.google.com/store/apps/details?id=com.microsoft.office.word", "b2B": false }, "windows": null, "android_work": null, "windows_phone": null }
-}
-#>
+            "permitAsRequired": true,
+            "iconData": "/9j/4AAQSkZJRgABAQEA...",
+            "appType": "App Store App",
+            "categories": [ "Default" ],
+            "roles": [ "AllUsers" ],
+            "workflow": null,
+            "vppAccount": null,
+            "iphone": {
+                "name": "MobileApp6",
+                "displayName": "Microsoft Office Word",
+                "description": "Microsoft Office Word app from app store",
+                "paid": false,
+                "removeWithMdm": true,
+                "preventBackup": true,
+                "changeManagementState": true,
+                "associateToDevice": false,
+                "canAssociateToDevice": false,
+                "canDissociateVPP": true,
+                "appVersion": "2.3",
+                "store": {
+                    "rating": {
+                        "rating": 0,
+                        "reviewerCount": 0
+                    },
+                    "screenshots": [],
+                    "faqs": [ {
+                        "question": "Question?",
+                        "answer": "Answer",
+                        "displayOrder": 1 
+                    } ],
+                    "storeSettings": {
+                        "rate": false,
+                        "review": false
+                    }
+                },
+                "avppParams": null,
+                "avppTokenParams": null,
+                "rules": null,
+                "appType": "mobile_ios",
+                "uuid": "8b0f08d0-52ef-453f-8d99-d4c1a3e973d7",
+                "id": 9,
+                "vppAccount": -1,
+                "iconPath": "/9j/4AAQSkZJRgABAQE..",
+                "iconUrl": "http://is3.mzstatic.com/image/thumb/Purple127/v4/e1/35/d2/e135d280-67cf-7f63-ca16-3c5f970a1d70/source/60x60bb.jpg",
+                "bundleId": "com.microsoft.Office.Word",
+                "appId": "586447913",
+                "appKey": null,
+                "storeUrl": "https://itunes.apple.com/us/app/microsoft-word/id586447913?mt=8&uo=4",
+                "b2B": false
+            },
+            "ipad": null,
+            "android": {
+                "name": "MobileApp5",
+                "displayName": "Microsoft Office Word","description": "Microsoft Word", "paid": false, "removeWithMdm": true, "preventBackup": true, "changeManagementState": false, "associateToDevice": false, "canAssociateToDevice": false, "canDissociateVPP": true, "appVersion": "16.0.8326.2034", "store": { "rating": { "rating": 0, "reviewerCount": 0 }, "screenshots": [], "faqs": [],
+        "storeSettings": { "rate": true, "review": true } }, "avppParams": null, "avppTokenParams": null, "rules": null, "appType": "mobile_android", "uuid": "40c514dd-1a8a-4e48-96ed-512b658fb333", "id": 8, "vppAccount": -1, "iconPath": "iVBORw0KGgoAAAANSU...", "iconUrl": "https://lh3.ggpht.com/j6aNgkpGRXp9PEinADFoSkyfup46-6Rb83bS41lfQC_Tc2qg96zQ_aqZcyiaV3M-Ai4", "bundleId": "com.microsoft.office.word", "appId": null, "appKey": null, "storeUrl": "https://play.google.com/store/apps/details?id=com.microsoft.office.word", "b2B": false }, "windows": null, "android_work": null, "windows_phone": null }
+    }
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -1949,43 +1990,44 @@ NEEDS TEXT
         $Response = Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers
         return $Response.container
     }
+    end {}
 }
 
 function Update-XMPublicStoreApp { #TODO
-<#
-.SYNOPSIS
+    <#
+    .SYNOPSIS
 
 
-.DESCRIPTION
+    .DESCRIPTION
 
 
-.PARAMETER Id
+    .PARAMETER Id
 
 
-.PARAMETER Platform
+    .PARAMETER Platform
 
 
-.EXAMPLE
+    .EXAMPLE
 
-{
-    "removeWithMdm": false,
-    "preventBackup": false,
-    "changeManagementState": false,
-    "displayName": "Microsoft Word - App Store",
-    "description": "description",
-    "faqs": [ {
-        "question": "Question?",
-        "answer": "Answer"
-    } ],
-    "storeSettings": {
-        "rate": false,
-        "review": false
-    },
-    "checkForUpdate": true
-}
+    {
+        "removeWithMdm": false,
+        "preventBackup": false,
+        "changeManagementState": false,
+        "displayName": "Microsoft Word - App Store",
+        "description": "description",
+        "faqs": [ {
+            "question": "Question?",
+            "answer": "Answer"
+        } ],
+        "storeSettings": {
+            "rate": false,
+            "review": false
+        },
+        "checkForUpdate": true
+    }
 
-Valid plaforms are: iphone, ipad, android, android_work, windows, windows_phone.
-#>
+    Valid plaforms are: iphone, ipad, android, android_work, windows, windows_phone.
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -2022,27 +2064,28 @@ Valid plaforms are: iphone, ipad, android, android_work, windows, windows_phone.
             return $Response.container
         }
     }
+    end {}
 }
 
 # ServerProperty functions.
 function Get-XMServerProperty {
-<#
-.SYNOPSIS
-Queries the server for server properties. 
+    <#
+    .SYNOPSIS
+    Queries the server for server properties. 
 
-.DESCRIPTION
-Queries the server for server properties. Without any parameters, this command will return all properties. 
+    .DESCRIPTION
+    Queries the server for server properties. Without any parameters, this command will return all properties. 
 
-.PARAMETER name
-Specify the parameter for which you want to get the values. The parameter name typically looks like xms.publicapi.static.timeout. 
+    .PARAMETER name
+    Specify the parameter for which you want to get the values. The parameter name typically looks like xms.publicapi.static.timeout. 
 
-.EXAMPLE
-Get-XMServerProperty  #returns all properties
+    .EXAMPLE
+    Get-XMServerProperty  #returns all properties
 
-.EXAMPLE
-Get-XMServerProperty -Name "xms.publicapi.static.timeout"
+    .EXAMPLE
+    Get-XMServerProperty -Name "xms.publicapi.static.timeout"
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline)]
@@ -2084,32 +2127,33 @@ Get-XMServerProperty -Name "xms.publicapi.static.timeout"
         $Results = Invoke-XMRequest -Request $Request
         return $Results.allEwProperties
     }
+    end {}
 }
 
 function Set-XMServerProperty {
-<#
-.SYNOPSIS
-Sets the server for server properties. 
+    <#
+    .SYNOPSIS
+    Sets the server for server properties. 
 
-.DESCRIPTION
-Changes the value of an existing server property.  
+    .DESCRIPTION
+    Changes the value of an existing server property.  
 
-.PARAMETER Name
-Specify the name of the property to change. The parameter name typically looks like xms.publicapi.static.timeout. 
+    .PARAMETER Name
+    Specify the name of the property to change. The parameter name typically looks like xms.publicapi.static.timeout. 
 
-.PARAMETER Value
-Specify the new value of the property. 
+    .PARAMETER Value
+    Specify the new value of the property. 
 
-.PARAMETER DisplayName
-Specify a new display name. This parameter is optional. If not specified the existing display name is used. 
+    .PARAMETER DisplayName
+    Specify a new display name. This parameter is optional. If not specified the existing display name is used. 
 
-.PARAMETER Description
-Specify a new description. This parameter is optional. If not specified the existing description is used. 
+    .PARAMETER Description
+    Specify a new description. This parameter is optional. If not specified the existing description is used. 
 
-.EXAMPLE
-Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
+    .EXAMPLE
+    Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -2155,32 +2199,33 @@ Set-XMServerProperty -Name "xms.publicapi.static.timeout" -Value "45"
             Invoke-XMRequest -Request $Request
         } 
     }
+    end {}
 }
 
 function New-XMserverProperty {
-<#
-.SYNOPSIS
-Create a new server property.  
+    <#
+    .SYNOPSIS
+    Create a new server property.  
 
-.DESCRIPTION
-Creates a new server property. All parameters are required.   
+    .DESCRIPTION
+    Creates a new server property. All parameters are required.   
 
-.PARAMETER Name
-Specify the name of the property. The parameter name typically looks like xms.publicapi.static.timeout. 
+    .PARAMETER Name
+    Specify the name of the property. The parameter name typically looks like xms.publicapi.static.timeout. 
 
-.PARAMETER Value
-Specify the value of the property. The value set during creation becomes the default value. 
+    .PARAMETER Value
+    Specify the value of the property. The value set during creation becomes the default value. 
 
-.PARAMETER DisplayName
-Specify a the display name.  
+    .PARAMETER DisplayName
+    Specify a the display name.  
 
-.PARAMETER Description
-Specify a the description. 
+    .PARAMETER Description
+    Specify a the description. 
 
-.EXAMPLE
-New-XMServerProperty -Name "xms.something.something" -Value "indeed" -DisplayName "something" -Description "a something property."
+    .EXAMPLE
+    New-XMServerProperty -Name "xms.something.something" -Value "indeed" -DisplayName "something" -Description "a something property."
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -2221,23 +2266,24 @@ New-XMServerProperty -Name "xms.something.something" -Value "indeed" -DisplayNam
             Invoke-XMRequest -Request $Request
         }
     }
+    end {}
 }
 
 function Remove-XMserverProperty {
-<#
-.SYNOPSIS
-Removes a server property. 
+    <#
+    .SYNOPSIS
+    Removes a server property. 
 
-.DESCRIPTION
-Removes a server property. This command accepts pipeline input.  
+    .DESCRIPTION
+    Removes a server property. This command accepts pipeline input.  
 
-.PARAMETER Name
-Specify the name of the propery to remove. This parameter is mandatory. 
+    .PARAMETER Name
+    Specify the name of the propery to remove. This parameter is mandatory. 
 
-.EXAMPLE
-Remove-XMServerProperty -Name "xms.something.something"
+    .EXAMPLE
+    Remove-XMServerProperty -Name "xms.something.something"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -2255,27 +2301,28 @@ Remove-XMServerProperty -Name "xms.something.something"
             Remove-XMObject -Entity "/serverproperties" -Target $Name
         }
     }
+    end {}
 }
 
 # ClientProperty functions.
 function Get-XMClientProperty {
-<#
-.SYNOPSIS
-Queries the server for client properties. 
+    <#
+    .SYNOPSIS
+    Queries the server for client properties. 
 
-.DESCRIPTION
-Queries the server for server properties. Without any parameters, this command will return all properties. 
+    .DESCRIPTION
+    Queries the server for server properties. Without any parameters, this command will return all properties. 
 
-.PARAMETER Key
-Specify the parameter for which you want to get the values. The parameter key typically looks like ENABLE_PASSWORD_CACHING. 
+    .PARAMETER Key
+    Specify the parameter for which you want to get the values. The parameter key typically looks like ENABLE_PASSWORD_CACHING. 
 
-.EXAMPLE
-Get-XMClientProperty  #returns all properties
+    .EXAMPLE
+    Get-XMClientProperty  #returns all properties
 
-.EXAMPLE
-Get-XMClientProperty -Key "ENABLE_PASSWORD_CACHING"
+    .EXAMPLE
+    Get-XMClientProperty -Key "ENABLE_PASSWORD_CACHING"
 
-#>
+    #>
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipelineByPropertyName)]
@@ -2289,32 +2336,33 @@ Get-XMClientProperty -Key "ENABLE_PASSWORD_CACHING"
         $Result = Get-XMObject -Entity "/clientproperties/$($Key)"
         return $Result.allClientProperties
     }
+    end {}
 }
 
 function New-XMClientProperty {
-<#
-.SYNOPSIS
-Creates a new client property. 
+    <#
+    .SYNOPSIS
+    Creates a new client property. 
 
-.DESCRIPTION
-Creates a new client property. All parameters are required. Use this to create/add new properties. To change an existing property, use set-xmclientproperty
+    .DESCRIPTION
+    Creates a new client property. All parameters are required. Use this to create/add new properties. To change an existing property, use set-xmclientproperty
 
-.PARAMETER Displayname
-Specify name of the property. 
+    .PARAMETER Displayname
+    Specify name of the property. 
 
-.PARAMETER Description
-Specify the description of the property.
+    .PARAMETER Description
+    Specify the description of the property.
 
-.PARAMETER Key
-Specify the key. 
+    .PARAMETER Key
+    Specify the key. 
 
-.PARAMETER Value
-Specify the value of the property. The value set when the property is created is used as the default value. 
+    .PARAMETER Value
+    Specify the value of the property. The value set when the property is created is used as the default value. 
 
-.EXAMPLE
-New-XMClientProperty -Displayname "Enable touch ID" -Description "Enables touch ID" -Key "ENABLE_TOUCH_ID_AUTH" -Value "true"
+    .EXAMPLE
+    New-XMClientProperty -Displayname "Enable touch ID" -Description "Enables touch ID" -Key "ENABLE_TOUCH_ID_AUTH" -Value "true"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -2350,32 +2398,33 @@ New-XMClientProperty -Displayname "Enable touch ID" -Description "Enables touch 
             Submit-XMObject -Entity '/clientproperties' -Target $Body
         }
     }
+    end {}
 }
 
 function Set-XMClientProperty {
-<#
-.SYNOPSIS
-Edit a client property. 
+    <#
+    .SYNOPSIS
+    Edit a client property. 
 
-.DESCRIPTION
-Edit a client property. Specify the key. All other properties are optional and will unchanged unless otherwise specified. 
+    .DESCRIPTION
+    Edit a client property. Specify the key. All other properties are optional and will unchanged unless otherwise specified. 
 
-.PARAMETER Displayname
-Specify name of the property. 
+    .PARAMETER Displayname
+    Specify name of the property. 
 
-.PARAMETER Description
-Specify the description of the property.
+    .PARAMETER Description
+    Specify the description of the property.
 
-.PARAMETER Key
-Specify the key. 
+    .PARAMETER Key
+    Specify the key. 
 
-.PARAMETER Value
-Specify the value of the property. 
+    .PARAMETER Value
+    Specify the value of the property. 
 
-.EXAMPLE
-Set-XMClientProperty -Key "ENABLE_TOUCH_ID_AUTH" -Value "false"
+    .EXAMPLE
+    Set-XMClientProperty -Key "ENABLE_TOUCH_ID_AUTH" -Value "false"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -2416,23 +2465,24 @@ Set-XMClientProperty -Key "ENABLE_TOUCH_ID_AUTH" -Value "false"
             Set-XMObject -Entity "/clientproperties/$($Key)" -Target $Body
         }
     }
+    end {}
 }
 
 function Remove-XMClientProperty {
-<#
-.SYNOPSIS
-Removes a client property. 
+    <#
+    .SYNOPSIS
+    Removes a client property. 
 
-.DESCRIPTION
-Removes a client property. This command accepts pipeline input.  
+    .DESCRIPTION
+    Removes a client property. This command accepts pipeline input.  
 
-.PARAMETER Key
-Specify the key of the propery to remove. This parameter is mandatory. 
+    .PARAMETER Key
+    Specify the key of the propery to remove. This parameter is mandatory. 
 
-.EXAMPLE
-Remove-XMClientProperty -Key "TEST_PROPERTY"
+    .EXAMPLE
+    Remove-XMClientProperty -Key "TEST_PROPERTY"
 
-#>
+    #>
     [CmdletBinding(SupportsShouldProcess = $true, 
         ConfirmImpact = 'High')]
     param(
@@ -2450,6 +2500,7 @@ Remove-XMClientProperty -Key "TEST_PROPERTY"
             Remove-XMObject -Entity "/clientproperties/$($Key)" -Target $null
         }
     }
+    end {}
 }
 
 Export-ModuleMember -Function Get-XMApp
